@@ -22,6 +22,8 @@ class ConfigResponse(BaseModel):
     ollama_model: str = "gemma4:e2b"
     mcp_url: str = ""
     workspace_root: str = ""
+    env_file_path: str = ""
+    env_file_exists: bool = False
 
 
 class UpdateConfigRequest(BaseModel):

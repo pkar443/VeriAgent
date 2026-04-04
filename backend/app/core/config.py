@@ -21,6 +21,7 @@ class AppSettings(BaseSettings):
         default_factory=lambda: Path.cwd() / ".veriagent" / "runtime-config.json",
         validation_alias="RUNTIME_CONFIG_PATH",
     )
+    env_file_path: Path = Field(default_factory=lambda: Path.cwd() / ".env", validation_alias="ENV_FILE_PATH")
     workspace_root: Path = Field(default_factory=Path.cwd, validation_alias="WORKSPACE_ROOT")
     retrieval_top_k: int = Field(default=3, validation_alias="RETRIEVAL_TOP_K")
     confluence_search_limit: int = Field(default=8, validation_alias="CONFLUENCE_SEARCH_LIMIT")

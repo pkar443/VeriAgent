@@ -369,10 +369,15 @@ def current_config() -> dict[str, Any] | None:
 
 
 def setup_page() -> None:
-    hero("Connect your sources and local model", "Save the runtime configuration used by both the dashboard and the MCP tools.")
+    hero("Connect your sources and local model", "Save the runtime configuration used by both the dashboard and the MCP tools, and write a workspace .env file for sharing.")
     config = current_config()
     if config is None:
         return
+
+    st.caption(
+        f"Dashboard saves will write `.env` at `{config.get('env_file_path', '.env')}`. "
+        f"Current state: {'present' if config.get('env_file_exists') else 'not created yet'}."
+    )
 
     with st.form("setup-form", clear_on_submit=False):
         confluence_base_url = st.text_input("Confluence URL", value=config.get("confluence_base_url", ""), placeholder="https://your-domain.atlassian.net/wiki")
@@ -402,7 +407,7 @@ def setup_page() -> None:
         if error:
             st.error(error)
         else:
-            st.success("Configuration saved.")
+            st.success(f"Configuration saved and `.env` updated at `{data.get('env_file_path', '.env')}`.")
             st.session_state["config_cache"] = data
 
     col1, col2, col3 = st.columns(3)

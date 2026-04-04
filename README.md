@@ -126,6 +126,7 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 ### Setup
 
 - Saves Confluence and Ollama settings into the runtime config file.
+- Creates or updates the workspace `.env` file directly from the dashboard.
 - Lets you test Confluence credentials and Ollama connectivity.
 - Includes a shortcut into the VS Code integration page.
 
