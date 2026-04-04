@@ -290,6 +290,7 @@ The backend sends only the top 2 to 3 relevant chunks to the model during normal
 - Confluence search quality depends on page access and Cloud API result quality.
 - Selenium code is starter code and may still require locator refinement.
 - Automatic file opening is environment-dependent and may not work inside every Docker setup.
+- CPU-only Ollama inference can still be slow even on high-RAM machines; RAM helps model fit, but token generation speed is mostly CPU or GPU bound.
 
 ## Future Improvements
 

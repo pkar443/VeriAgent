@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import copy
+import json
+import time
+from threading import Lock
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
@@ -13,6 +17,9 @@ from backend.app.utils.text import build_snippet
 
 
 class ConfluenceClient:
+    _response_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+    _cache_lock = Lock()
+
     def __init__(self, config: RuntimeConfig, settings: AppSettings):
         self.config = config
         self.settings = settings
@@ -29,6 +36,11 @@ class ConfluenceClient:
     def _request(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self._ensure_configured()
         url = f"{self.base_url}/rest/api{path}"
+        cache_key = self._cache_key(path, params)
+        cached = self._get_cached_response(cache_key)
+        if cached is not None:
+            return cached
+
         try:
             response = httpx.get(
                 url,
@@ -47,7 +59,9 @@ class ConfluenceClient:
         if response.status_code >= 400:
             raise ExternalServiceError(f"Confluence returned HTTP {response.status_code}.")
 
-        return response.json()
+        data = response.json()
+        self._set_cached_response(cache_key, data)
+        return data
 
     def test_connection(self) -> TestResult:
         data = self._request("/space", params={"limit": 1})
@@ -138,6 +152,42 @@ class ConfluenceClient:
         if webui_path.startswith("http://") or webui_path.startswith("https://"):
             return webui_path
         return f"{self.base_url}{webui_path}"
+
+    def _cache_key(self, path: str, params: dict[str, Any] | None) -> str:
+        return json.dumps(
+            {
+                "base_url": self.base_url,
+                "email": self.config.confluence_email,
+                "path": path,
+                "params": params or {},
+            },
+            sort_keys=True,
+        )
+
+    def _get_cached_response(self, cache_key: str) -> dict[str, Any] | None:
+        ttl_seconds = self.settings.confluence_cache_ttl_seconds
+        if ttl_seconds <= 0:
+            return None
+
+        now = time.monotonic()
+        with self._cache_lock:
+            entry = self._response_cache.get(cache_key)
+            if entry is None:
+                return None
+            expires_at, payload = entry
+            if expires_at <= now:
+                self._response_cache.pop(cache_key, None)
+                return None
+            return copy.deepcopy(payload)
+
+    def _set_cached_response(self, cache_key: str, payload: dict[str, Any]) -> None:
+        ttl_seconds = self.settings.confluence_cache_ttl_seconds
+        if ttl_seconds <= 0:
+            return
+
+        expires_at = time.monotonic() + ttl_seconds
+        with self._cache_lock:
+            self._response_cache[cache_key] = (expires_at, copy.deepcopy(payload))
 
 
 def escape_cql(query: str) -> str:

@@ -21,7 +21,11 @@ class RetrievalService:
             return []
 
         chunks: list[RetrievedChunk] = []
-        for rank, result in enumerate(search_results[:5], start=1):
+        pages_to_fetch = min(
+            len(search_results),
+            min(self.settings.max_pages_per_query, max(2, limit)),
+        )
+        for rank, result in enumerate(search_results[:pages_to_fetch], start=1):
             page = self.confluence.get_page(result.page_id)
             for chunk_text in split_text_into_chunks(page.content, max_chars=self.settings.max_chunk_characters):
                 score = score_chunk(query, page.title, chunk_text, result.snippet, rank)

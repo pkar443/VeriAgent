@@ -25,6 +25,8 @@ class AppSettings(BaseSettings):
     workspace_root: Path = Field(default_factory=Path.cwd, validation_alias="WORKSPACE_ROOT")
     retrieval_top_k: int = Field(default=3, validation_alias="RETRIEVAL_TOP_K")
     confluence_search_limit: int = Field(default=8, validation_alias="CONFLUENCE_SEARCH_LIMIT")
+    max_pages_per_query: int = Field(default=3, validation_alias="MAX_PAGES_PER_QUERY")
+    confluence_cache_ttl_seconds: int = Field(default=300, validation_alias="CONFLUENCE_CACHE_TTL_SECONDS")
     max_page_characters: int = Field(default=25000, validation_alias="MAX_PAGE_CHARACTERS")
     max_chunk_characters: int = Field(default=1800, validation_alias="MAX_CHUNK_CHARACTERS")
     ollama_timeout_seconds: int = Field(default=120, validation_alias="OLLAMA_TIMEOUT_SECONDS")

@@ -94,6 +94,8 @@ class ConfigStore:
             "PUBLIC_BACKEND_URL": settings.public_backend_url,
             "RETRIEVAL_TOP_K": str(settings.retrieval_top_k),
             "CONFLUENCE_SEARCH_LIMIT": str(settings.confluence_search_limit),
+            "MAX_PAGES_PER_QUERY": str(settings.max_pages_per_query),
+            "CONFLUENCE_CACHE_TTL_SECONDS": str(settings.confluence_cache_ttl_seconds),
             "MAX_PAGE_CHARACTERS": str(settings.max_page_characters),
             "MAX_CHUNK_CHARACTERS": str(settings.max_chunk_characters),
             "OLLAMA_TIMEOUT_SECONDS": str(settings.ollama_timeout_seconds),
