@@ -1,0 +1,79 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: veriagent-ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:e2b}
+    command: >
+      sh -c "ollama serve &
+      until ollama list >/dev/null 2>&1; do sleep 2; done;
+      ollama pull ${OLLAMA_MODEL:-gemma4:e2b};
+      wait"
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: veriagent-backend
+    working_dir: /workspace
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_PORT: ${APP_PORT:-8000}
+      MCP_PORT: ${MCP_PORT:-8000}
+      PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:-http://localhost:8000}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      WORKSPACE_ROOT: /workspace
+      RUNTIME_CONFIG_PATH: /workspace/.veriagent/runtime-config.json
+    volumes:
+      - ./:/workspace
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:${APP_PORT:-8000}"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.getenv('APP_PORT','8000')}/api/health\").read()",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    container_name: veriagent-dashboard
+    working_dir: /workspace
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      BACKEND_URL: http://backend:${APP_PORT:-8000}
+      DEFAULT_WORKSPACE_PATH: /workspace
+    volumes:
+      - ./:/workspace
+    ports:
+      - "127.0.0.1:8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  ollama-data:
