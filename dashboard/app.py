@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000").rstrip("/")
 DEFAULT_WORKSPACE_PATH = os.environ.get("DEFAULT_WORKSPACE_PATH", os.getcwd())
-PAGES = ["Home", "Setup", "Ask", "Source Explorer", "VS Code Integration"]
+PAGES = ["Home", "Setup", "Ask", "VS Code Integration"]
 
 
 st.set_page_config(
@@ -347,6 +347,62 @@ def source_card(source: dict[str, Any]) -> None:
         )
 
 
+def get_page_preview(page_id: str) -> tuple[dict[str, Any] | None, str | None]:
+    cache = st.session_state.setdefault("page_preview_cache", {})
+    if page_id in cache:
+        return cache[page_id], None
+
+    data, error = api_get(f"/api/confluence/pages/{page_id}")
+    if error:
+        return None, error
+    cache[page_id] = data
+    return data, None
+
+
+def render_matched_sources(result: dict[str, Any]) -> None:
+    sources = result.get("sources", [])
+    if not sources:
+        st.info("No Confluence pages matched this question.")
+        return
+
+    source_lookup = {source["page_id"]: source for source in sources}
+    source_ids = list(source_lookup.keys())
+
+    if st.session_state.get("ask_selected_source_page") not in source_lookup:
+        st.session_state["ask_selected_source_page"] = source_ids[0]
+
+    st.caption("Live Confluence matches for this query. This MVP searches Confluence at runtime; it does not use a persistent local page index yet.")
+    selected_page_id = st.radio(
+        "Matched pages",
+        source_ids,
+        key="ask_selected_source_page",
+        format_func=lambda page_id: source_lookup[page_id]["title"],
+    )
+
+    selected_source = source_lookup[selected_page_id]
+    source_card(selected_source)
+
+    preview, error = get_page_preview(selected_page_id)
+    if error:
+        st.error(error)
+        return
+
+    if preview:
+        st.text_area(
+            "Page preview",
+            value=preview.get("content", ""),
+            height=260,
+            key=f"preview-{selected_page_id}",
+            disabled=True,
+        )
+
+    matched_chunks = [chunk for chunk in result.get("retrieved_chunks", []) if chunk.get("page_id") == selected_page_id]
+    if matched_chunks:
+        st.markdown("**Matched excerpts used for grounding**")
+        for chunk in matched_chunks[:3]:
+            st.markdown(f"- {chunk.get('snippet') or chunk.get('content', '')[:200]}")
+
+
 def show_api_error(error: str | None) -> None:
     if error:
         st.error(error)
@@ -489,10 +545,27 @@ def home_page() -> None:
 
 
 def ask_page() -> None:
-    hero("Ask grounded questions and generate QA artifacts", "Queries only use top-ranked Confluence chunks, and generation falls back to sources when Ollama is unavailable.")
+    hero(
+        "Ask grounded questions with live source context",
+        "Run one query and inspect the matched Confluence pages beside the answer. VeriAgent searches Confluence live and only sends the top-ranked chunks to Ollama.",
+    )
+    st.markdown(
+        """
+        <div class="block-note">
+          <strong>How retrieval works:</strong> your question is sent to Confluence search first, VeriAgent fetches the best matching pages, ranks their chunks, and only forwards a small grounded subset to the model. The control below changes grounding depth, not the total number of pages in Confluence.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     with st.form("ask-form"):
         query = st.text_area("What do you want to verify?", placeholder="Example: Generate login test scenarios for the release approval workflow.")
-        top_k = st.slider("Top Confluence chunks", min_value=2, max_value=5, value=3)
+        top_k = st.slider(
+            "Grounding depth",
+            min_value=1,
+            max_value=5,
+            value=3,
+            help="How many top-ranked chunks VeriAgent sends to Ollama for this answer.",
+        )
         generate_selenium = st.toggle("Generate Selenium starter code", value=False)
         submit = st.form_submit_button("Run grounded QA", use_container_width=True)
 
@@ -505,6 +578,10 @@ def ask_page() -> None:
             st.error(error)
         else:
             st.session_state["ask_result"] = data
+            st.session_state["page_preview_cache"] = {}
+            sources = data.get("sources", [])
+            if sources:
+                st.session_state["ask_selected_source_page"] = sources[0].get("page_id")
 
     result = st.session_state.get("ask_result")
     if not result:
@@ -513,71 +590,41 @@ def ask_page() -> None:
     if result.get("generation_error"):
         st.warning(result["generation_error"])
 
-    tabs = st.tabs(["Answer", "QA Assets", "Selenium", "Sources"])
+    summary_cols = st.columns(3)
+    with summary_cols[0]:
+        st.metric("Matched pages", len(result.get("sources", [])))
+    with summary_cols[1]:
+        st.metric("Grounding chunks", len(result.get("retrieved_chunks", [])))
+    with summary_cols[2]:
+        st.metric("Mode", "QA + sources" if not result.get("generation_error") else "Sources only")
+
+    left, right = st.columns([1.25, 0.85], gap="large")
     sections = result.get("sections", {})
 
-    with tabs[0]:
-        st.subheader("Answer")
-        st.write(sections.get("answer") or "No answer text returned.")
-        st.subheader("Assumptions")
-        st.write(sections.get("assumptions") or "No assumptions listed.")
-
-    with tabs[1]:
-        st.subheader("Test Scenarios")
-        st.write(sections.get("test_scenarios") or "No scenarios returned.")
-        st.subheader("Steps")
-        st.write(sections.get("steps") or "No steps returned.")
-        st.subheader("Expected Results")
-        st.write(sections.get("expected_results") or "No expected results returned.")
-
-    with tabs[2]:
-        code = sections.get("selenium_code") or "Not requested."
-        st.code(code, language="python")
-
-    with tabs[3]:
-        for source in result.get("sources", []):
-            source_card(source)
-
-
-def source_explorer_page() -> None:
-    hero("Inspect indexed Confluence content", "Search pages, preview cleaned content, and jump directly back to Confluence when you need the source of truth.")
-    with st.form("sources-form"):
-        query = st.text_input("Search pages", value=st.session_state.get("source_query", ""))
-        limit = st.slider("Page count", min_value=5, max_value=30, value=10)
-        load_pages = st.form_submit_button("Load pages", use_container_width=True)
-
-    if load_pages or "source_pages" not in st.session_state:
-        data, error = api_get("/api/confluence/pages", params={"query": query, "limit": limit})
-        if error:
-            st.error(error)
-        else:
-            st.session_state["source_query"] = query
-            st.session_state["source_pages"] = data
-
-    pages = st.session_state.get("source_pages", [])
-    if not pages:
-        st.info("No pages loaded yet.")
-        return
-
-    labels = [f"{page['title']} ({page['page_id']})" for page in pages]
-    selected_label = st.selectbox("Select a page", labels)
-    selected_page = next(page for page in pages if f"{page['title']} ({page['page_id']})" == selected_label)
-
-    left, right = st.columns([0.9, 1.4], gap="large")
     with left:
-        for page in pages:
-            source_card(page)
+        tabs = st.tabs(["Answer", "QA Assets", "Selenium"])
+
+        with tabs[0]:
+            st.subheader("Answer")
+            st.write(sections.get("answer") or "No answer text returned.")
+            st.subheader("Assumptions")
+            st.write(sections.get("assumptions") or "No assumptions listed.")
+
+        with tabs[1]:
+            st.subheader("Test Scenarios")
+            st.write(sections.get("test_scenarios") or "No scenarios returned.")
+            st.subheader("Steps")
+            st.write(sections.get("steps") or "No steps returned.")
+            st.subheader("Expected Results")
+            st.write(sections.get("expected_results") or "No expected results returned.")
+
+        with tabs[2]:
+            code = sections.get("selenium_code") or "Not requested."
+            st.code(code, language="python")
 
     with right:
-        data, error = api_get(f"/api/confluence/pages/{selected_page['page_id']}")
-        if error:
-            st.error(error)
-        else:
-            st.subheader(data.get("title", "Untitled"))
-            st.caption(data.get("url", ""))
-            st.text_area("Preview", value=data.get("content", ""), height=520)
-            if data.get("url"):
-                st.link_button("Open in Confluence", data["url"])
+        st.subheader("Matched Sources")
+        render_matched_sources(result)
 
 
 def vscode_page() -> None:
@@ -678,10 +725,10 @@ def main() -> None:
         setup_page()
     elif page == "Ask":
         ask_page()
-    elif page == "Source Explorer":
-        source_explorer_page()
-    else:
+    elif page == "VS Code Integration":
         vscode_page()
+    else:
+        home_page()
 
 
 if __name__ == "__main__":

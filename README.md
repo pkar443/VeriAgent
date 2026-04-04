@@ -133,15 +133,11 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 ### Ask
 
 - Accepts a grounded question.
-- Lets you choose the retrieval depth.
+- Lets you choose grounding depth.
 - Optionally generates Selenium starter code.
+- Shows the matched Confluence pages beside the answer.
+- Lets you preview the selected page and matched excerpts used for grounding.
 - Always returns source links and snippets, even if generation fails.
-
-### Source Explorer
-
-- Loads recent pages or keyword-matched results.
-- Shows cleaned content previews.
-- Links directly back to Confluence.
 
 ### VS Code Integration
 
