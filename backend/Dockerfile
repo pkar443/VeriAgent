@@ -13,4 +13,4 @@ COPY . /workspace
 
 EXPOSE 8000
 
-CMD ["python", "backend/start_backend.py"]
+CMD ["python", "-m", "backend.start_backend"]
