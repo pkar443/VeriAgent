@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 
 from backend.app.core.exceptions import ExternalServiceError, ValidationError
-from backend.app.models.schemas import AskResponse, QASections, RetrievedChunk, SourceRecord
+from backend.app.models.schemas import AskResponse, QASections, RetrievedChunk
 from backend.app.services.llm import LLMProvider
-from backend.app.services.retrieval import RetrievalService
+from backend.app.services.retrieval import RetrievalService, unique_sources
 
 
 STRICT_PROMPT = """You are a QA engineer.
@@ -174,22 +174,3 @@ def parse_sections(raw_output: str, generate_selenium: bool) -> QASections:
         selenium_code=selenium_code,
         raw_output=raw_output,
     )
-
-
-def unique_sources(chunks: list[RetrievedChunk]) -> list[SourceRecord]:
-    seen: set[str] = set()
-    sources: list[SourceRecord] = []
-    for chunk in chunks:
-        if chunk.page_id in seen:
-            continue
-        seen.add(chunk.page_id)
-        sources.append(
-            SourceRecord(
-                title=chunk.title,
-                page_id=chunk.page_id,
-                url=chunk.url,
-                snippet=chunk.snippet,
-                metadata=chunk.metadata,
-            )
-        )
-    return sources

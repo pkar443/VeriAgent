@@ -63,6 +63,20 @@ class AskRequest(BaseModel):
     generate_selenium: bool = False
 
 
+class ContextRequest(BaseModel):
+    query: str
+    top_k: int = Field(default=3, ge=1, le=5)
+
+
+class ContextResponse(BaseModel):
+    query: str
+    top_k: int
+    detail: str = ""
+    guidance: list[str] = Field(default_factory=list)
+    sources: list[SourceRecord] = Field(default_factory=list)
+    retrieved_chunks: list[RetrievedChunk] = Field(default_factory=list)
+
+
 class QASections(BaseModel):
     answer: str = ""
     test_scenarios: str = ""

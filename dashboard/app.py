@@ -541,7 +541,7 @@ def home_page() -> None:
     st.markdown(
         """
         <div class="block-note">
-          The backend exposes both REST endpoints and the mounted MCP server. That means the dashboard and editor tools hit the same retrieval, prompting, and Confluence logic instead of drifting into separate implementations.
+          The backend exposes both REST endpoints and the mounted MCP server. The dashboard and editor tools share the same Confluence and retrieval logic, while the final generation path can differ: the dashboard uses local Ollama and Codex can summarize directly from retrieved MCP context.
         </div>
         """,
         unsafe_allow_html=True,

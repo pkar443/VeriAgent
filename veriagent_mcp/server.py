@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.core.exceptions import VeriAgentError
-from backend.app.models.schemas import AskResponse, MCPConfigRequest
+from backend.app.models.schemas import AskResponse, ContextResponse, MCPConfigRequest
 from backend.app.services.hub import ServiceContainer
 from mcp.server.fastmcp import FastMCP
 
@@ -10,8 +10,8 @@ def build_mcp_server(container: ServiceContainer) -> FastMCP:
     server = FastMCP(
         "VeriAgent",
         instructions=(
-            "Ground all answers in Confluence content, return URLs, and use the shared VeriAgent services "
-            "for retrieval, QA output, and Selenium generation."
+            "Ground all answers in Confluence content and return URLs. Prefer retrieval-first tools so the calling "
+            "agent can summarize from Confluence context directly. Use local Ollama generation only when explicitly requested."
         ),
     )
 
@@ -34,27 +34,61 @@ def build_mcp_server(container: ServiceContainer) -> FastMCP:
             return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
 
     @server.tool()
-    def answer_from_confluence(query: str, top_k: int = 3) -> dict:
-        """Answer a documentation question using the shared grounded QA flow."""
+    def retrieve_confluence_context(query: str, top_k: int = 3) -> dict:
+        """Retrieve grounded Confluence chunks for the agent to summarize without using the local LLM."""
         try:
+            context = container.retrieval().retrieve_context(
+                query=query,
+                top_k=top_k,
+                guidance=answer_guidance(),
+            )
+            return serialize_context(context, task="answer")
+        except VeriAgentError as exc:
+            return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
+
+    @server.tool()
+    def answer_from_confluence(query: str, top_k: int = 3, use_local_llm: bool = False) -> dict:
+        """Get grounded support for a documentation question. By default this returns Confluence context for the agent to summarize; set use_local_llm=true to force the local Ollama QA flow."""
+        try:
+            if not use_local_llm:
+                context = container.retrieval().retrieve_context(
+                    query=query,
+                    top_k=top_k,
+                    guidance=answer_guidance(),
+                )
+                return serialize_context(context, task="answer")
             answer = container.qa().answer(query=query, top_k=top_k, generate_selenium=False)
             return serialize_answer(answer)
         except VeriAgentError as exc:
             return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
 
     @server.tool()
-    def generate_selenium_test_plan(query: str, top_k: int = 3) -> dict:
-        """Generate grounded QA scenarios, steps, and expected results."""
+    def generate_selenium_test_plan(query: str, top_k: int = 3, use_local_llm: bool = False) -> dict:
+        """Get grounded Confluence context for a QA test plan. By default the agent should generate the final plan from the returned sources; set use_local_llm=true to force local Ollama generation."""
         try:
+            if not use_local_llm:
+                context = container.retrieval().retrieve_context(
+                    query=query,
+                    top_k=top_k,
+                    guidance=test_plan_guidance(),
+                )
+                return serialize_context(context, task="selenium_test_plan")
             answer = container.qa().answer(query=query, top_k=top_k, generate_selenium=False)
             return serialize_answer(answer)
         except VeriAgentError as exc:
             return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
 
     @server.tool()
-    def generate_selenium_code(query: str, top_k: int = 3) -> dict:
-        """Generate grounded Selenium starter code alongside the QA plan."""
+    def generate_selenium_code(query: str, top_k: int = 3, use_local_llm: bool = False) -> dict:
+        """Get grounded Confluence context for Selenium code generation. By default the agent should generate the final code from the returned sources; set use_local_llm=true to force local Ollama generation."""
         try:
+            if not use_local_llm:
+                context = container.retrieval().retrieve_context(
+                    query=query,
+                    top_k=top_k,
+                    guidance=selenium_code_guidance(),
+                )
+                return serialize_context(context, task="selenium_code")
             answer = container.qa().answer(query=query, top_k=top_k, generate_selenium=True)
             return serialize_answer(answer)
         except VeriAgentError as exc:
@@ -86,6 +120,7 @@ def build_mcp_server(container: ServiceContainer) -> FastMCP:
 def serialize_answer(answer: AskResponse) -> dict:
     return {
         "ok": answer.generation_error is None,
+        "mode": "local_llm",
         "query": answer.query,
         "generate_selenium": answer.generate_selenium,
         "answer": answer.sections.answer,
@@ -99,3 +134,44 @@ def serialize_answer(answer: AskResponse) -> dict:
         "retrieved_chunks": [chunk.model_dump() for chunk in answer.retrieved_chunks],
         "raw_output": answer.sections.raw_output,
     }
+
+
+def serialize_context(context: ContextResponse, task: str) -> dict:
+    return {
+        "ok": True,
+        "mode": "agent_summary",
+        "task": task,
+        "query": context.query,
+        "top_k": context.top_k,
+        "detail": context.detail,
+        "guidance": context.guidance,
+        "sources": [source.model_dump() for source in context.sources],
+        "retrieved_chunks": [chunk.model_dump() for chunk in context.retrieved_chunks],
+    }
+
+
+def answer_guidance() -> list[str]:
+    return [
+        "Answer only from the retrieved Confluence chunks.",
+        "If the requested detail is missing, say it is not documented.",
+        "Keep the answer concise and include a Sources section.",
+        "Format each source as a Markdown link like [Title](https://...).",
+    ]
+
+
+def test_plan_guidance() -> list[str]:
+    return [
+        "Generate the QA plan only from the retrieved Confluence chunks.",
+        "Return Test Scenarios, Steps, Expected Results, Assumptions, and Sources.",
+        "If details are missing, list them under Assumptions instead of inventing them.",
+        "Format each source as a Markdown link like [Title](https://...).",
+    ]
+
+
+def selenium_code_guidance() -> list[str]:
+    return [
+        "Generate Selenium starter code only from the retrieved Confluence chunks.",
+        "Also include test scenarios, assumptions, and source links.",
+        "Do not invent locators, workflows, or test data that are not grounded in the retrieved content.",
+        "Format each source as a Markdown link like [Title](https://...).",
+    ]

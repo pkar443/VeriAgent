@@ -58,6 +58,7 @@ README.md
 - Surfaces Confluence links in dashboard results and MCP tool responses.
 - Generates editor MCP config for `.vscode/mcp.json` and `.codex/config.toml`.
 - Includes a workspace `AGENTS.md` so Codex prefers the direct VeriAgent MCP tools for Confluence questions.
+- Uses local Ollama generation for the dashboard, while MCP tools default to retrieval-only context so Codex can write the final answer itself.
 
 ## Quick Start
 
@@ -178,6 +179,12 @@ Typical location:
 
 This is the preferred path for Codex. The workspace `.vscode/mcp.json` file is optional and is mainly useful for the generic VS Code MCP workspace flow.
 
+### MCP generation behavior
+
+- Dashboard `Ask` keeps using local Ollama and `gemma4:e2b`.
+- MCP tools for Codex default to retrieval-only context and do not call Ollama unless `use_local_llm=true` is explicitly requested.
+- This keeps Codex answers grounded in Confluence while letting Codex do the final summarization in the editor.
+
 ### VS Code workspace config
 
 Generated file:
@@ -227,10 +234,10 @@ If your Codex setup only reads the global config, copy the generated snippet int
 
 ### Recommended direct-answer test
 
-Use the direct MCP answer tool so the flow matches the dashboard:
+Use the retrieval-first MCP path so Codex summarizes from grounded Confluence chunks:
 
 ```text
-Use veriagent.answer_from_confluence for: "product requirement deadline".
+Use veriagent.retrieve_confluence_context for: "product requirement deadline".
 
 Return only:
 Answer:
@@ -238,7 +245,16 @@ Sources:
 - [title](url)
 ```
 
-This uses the same backend QA path as the dashboard rather than making Codex manually inspect multiple tools.
+This retrieves the same grounded Confluence context used by the backend retrieval layer without sending the final answer through Ollama.
+
+### Optional local-LLM answer path
+
+If you explicitly want the MCP server to use local Gemma for the final answer, ask for:
+
+```text
+Use veriagent.answer_from_confluence for: "product requirement deadline" with use_local_llm=true.
+Return the answer and sources.
+```
 
 ### Other useful tool prompts
 
@@ -303,6 +319,7 @@ Environment defaults:
 - `GET /api/confluence/pages`
 - `GET /api/confluence/pages/{page_id}`
 - `POST /api/qa/ask`
+- `POST /api/qa/context`
 - `POST /api/integration/config`
 - `POST /api/integration/enable`
 - `POST /api/integration/open-location`
@@ -353,9 +370,10 @@ The backend sends only the top 2 to 3 relevant chunks to the model during normal
 
 ### Codex MCP calls seem slow or get cancelled
 
-- Prefer direct prompts that call `veriagent.answer_from_confluence` instead of asking Codex to explore and decide on tools itself.
+- Prefer direct prompts that call `veriagent.retrieve_confluence_context` instead of asking Codex to explore and decide on tools itself.
 - Keep the request narrow, such as `product requirement deadline` instead of a broad question.
-- If Ollama is running on CPU only, the grounded answer step can still take tens of seconds.
+- Retrieval-only MCP calls should be much faster than the local Ollama answer path.
+- If you explicitly use `use_local_llm=true` and Ollama is running on CPU only, the grounded answer step can still take tens of seconds.
 - If a chat shows tool calls being cancelled, start a fresh chat and retry with the direct tool prompt above.
 
 ### Docker build cannot start

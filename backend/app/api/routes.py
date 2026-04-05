@@ -8,6 +8,8 @@ from backend.app.models.schemas import (
     AskRequest,
     AskResponse,
     ConfigResponse,
+    ContextRequest,
+    ContextResponse,
     HealthResponse,
     MCPConfigRequest,
     MCPConfigResponse,
@@ -64,6 +66,19 @@ def ask_from_confluence(payload: AskRequest, request: Request) -> AskResponse:
         query=payload.query,
         top_k=payload.top_k,
         generate_selenium=payload.generate_selenium,
+    )
+
+
+@router.post("/qa/context", response_model=ContextResponse)
+def retrieve_confluence_context(payload: ContextRequest, request: Request) -> ContextResponse:
+    return get_container(request).retrieval().retrieve_context(
+        query=payload.query,
+        top_k=payload.top_k,
+        guidance=[
+            "Answer only from the retrieved Confluence chunks.",
+            "If the requested detail is missing, say it is not documented.",
+            "Cite sources as Markdown links when the calling client supports it.",
+        ],
     )
 
 

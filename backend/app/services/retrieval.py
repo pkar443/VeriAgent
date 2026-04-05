@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from backend.app.core.exceptions import ValidationError
 from backend.app.core.config import AppSettings
-from backend.app.models.schemas import RetrievedChunk
+from backend.app.models.schemas import ContextResponse, RetrievedChunk, SourceRecord
 from backend.app.services.confluence import ConfluenceClient
 from backend.app.utils.text import build_snippet, score_chunk, split_text_into_chunks, stable_chunk_id
 
@@ -12,6 +13,9 @@ class RetrievalService:
         self.settings = settings
 
     def retrieve(self, query: str, top_k: int | None = None) -> list[RetrievedChunk]:
+        if not query.strip():
+            raise ValidationError("A query is required.")
+
         limit = top_k or self.settings.retrieval_top_k
         search_results = self.confluence.search_pages(
             query=query,
@@ -67,3 +71,40 @@ class RetrievalService:
             )
             for result in search_results[:limit]
         ]
+
+    def retrieve_context(self, query: str, top_k: int | None = None, guidance: list[str] | None = None) -> ContextResponse:
+        limit = top_k or self.settings.retrieval_top_k
+        chunks = self.retrieve(query=query, top_k=limit)
+        sources = unique_sources(chunks)
+        if chunks:
+            detail = f"Retrieved {len(chunks)} grounded chunk(s) from {len(sources)} Confluence page(s)."
+        else:
+            detail = "No relevant Confluence content was found for this query."
+
+        return ContextResponse(
+            query=query,
+            top_k=limit,
+            detail=detail,
+            guidance=guidance or [],
+            sources=sources,
+            retrieved_chunks=chunks,
+        )
+
+
+def unique_sources(chunks: list[RetrievedChunk]) -> list[SourceRecord]:
+    seen: set[str] = set()
+    sources: list[SourceRecord] = []
+    for chunk in chunks:
+        if chunk.page_id in seen:
+            continue
+        seen.add(chunk.page_id)
+        sources.append(
+            SourceRecord(
+                title=chunk.title,
+                page_id=chunk.page_id,
+                url=chunk.url,
+                snippet=chunk.snippet,
+                metadata=chunk.metadata,
+            )
+        )
+    return sources
