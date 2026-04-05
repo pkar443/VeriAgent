@@ -23,6 +23,8 @@ class AppSettings(BaseSettings):
     )
     env_file_path: Path = Field(default_factory=lambda: Path.cwd() / ".env", validation_alias="ENV_FILE_PATH")
     workspace_root: Path = Field(default_factory=Path.cwd, validation_alias="WORKSPACE_ROOT")
+    host_workspace_path: str = Field(default="", validation_alias="HOST_WORKSPACE_PATH")
+    running_in_docker: bool = Field(default=False, validation_alias="RUNNING_IN_DOCKER")
     retrieval_top_k: int = Field(default=3, validation_alias="RETRIEVAL_TOP_K")
     confluence_search_limit: int = Field(default=8, validation_alias="CONFLUENCE_SEARCH_LIMIT")
     max_pages_per_query: int = Field(default=3, validation_alias="MAX_PAGES_PER_QUERY")

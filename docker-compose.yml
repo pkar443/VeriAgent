@@ -33,6 +33,8 @@ services:
       PUBLIC_BACKEND_URL: ${PUBLIC_BACKEND_URL:-http://localhost:8000}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       WORKSPACE_ROOT: /workspace
+      HOST_WORKSPACE_PATH: ${HOST_WORKSPACE_PATH:-}
+      RUNNING_IN_DOCKER: "true"
       RUNTIME_CONFIG_PATH: /workspace/.veriagent/runtime-config.json
     volumes:
       - ./:/workspace
@@ -65,6 +67,8 @@ services:
     environment:
       BACKEND_URL: http://backend:${APP_PORT:-8000}
       DEFAULT_WORKSPACE_PATH: /workspace
+      HOST_WORKSPACE_PATH: ${HOST_WORKSPACE_PATH:-}
+      RUNNING_IN_DOCKER: "true"
     volumes:
       - ./:/workspace
     ports:

@@ -89,6 +89,8 @@ def integration_info(request: Request) -> dict[str, str]:
     return {
         "mcp_url": container.settings.resolved_mcp_url(),
         "workspace_root": str(container.settings.workspace_root),
+        "host_workspace_path": container.settings.host_workspace_path,
+        "running_in_docker": str(container.settings.running_in_docker).lower(),
     }
 
 

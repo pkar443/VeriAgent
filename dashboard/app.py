@@ -638,15 +638,22 @@ def vscode_page() -> None:
         st.error(error)
         return
 
+    running_in_docker = str(info.get("running_in_docker", "false")).lower() == "true"
+    host_workspace_path = info.get("host_workspace_path", "").strip()
+    display_workspace_path = host_workspace_path or info.get("workspace_root", DEFAULT_WORKSPACE_PATH)
+
     st.markdown(
         f"""
         <div class="block-note">
           <strong>MCP server URL:</strong> {html.escape(info.get("mcp_url", ""))}<br>
-          <strong>Default workspace path:</strong> {html.escape(info.get("workspace_root", DEFAULT_WORKSPACE_PATH))}
+          <strong>Suggested workspace path:</strong> {html.escape(display_workspace_path)}
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    if running_in_docker:
+        st.caption("Open Location is disabled in the Docker deployment because the dashboard cannot launch your host file explorer from inside the container.")
 
     workspace_path = st.text_input("Workspace path", value=st.session_state.get("workspace_path", info.get("workspace_root", DEFAULT_WORKSPACE_PATH)))
     target_label = st.radio("Config target", ["Both", "VS Code", "Codex"], horizontal=True)
@@ -671,12 +678,17 @@ def vscode_page() -> None:
                 st.session_state["workspace_path"] = workspace_path
                 st.success("Config written to the workspace.")
     with col3:
-        if st.button("Open Location", use_container_width=True):
-            _, error = api_post("/api/integration/open-location", {"path": workspace_path})
-            if error:
-                st.warning(error)
+        button_label = "Copy Host Path" if running_in_docker else "Open Location"
+        if st.button(button_label, use_container_width=True):
+            if running_in_docker:
+                render_copy_button(display_workspace_path, "Copy Workspace Path", "workspace-path")
+                st.info(f"Open this folder manually on your host machine: {display_workspace_path}")
             else:
-                st.success("Opened the workspace location.")
+                _, error = api_post("/api/integration/open-location", {"path": workspace_path})
+                if error:
+                    st.warning(error)
+                else:
+                    st.success("Opened the workspace location.")
 
     config = st.session_state.get("mcp_config")
     if not config:

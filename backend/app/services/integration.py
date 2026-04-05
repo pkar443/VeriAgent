@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -64,13 +65,29 @@ class IntegrationService:
         if not path.exists():
             raise NotFoundError(f"Path does not exist: {path}")
 
+        if self.settings.running_in_docker:
+            host_hint = self.settings.host_workspace_path.strip()
+            if host_hint:
+                raise ValidationError(
+                    f"Automatic opening is disabled inside Docker. Open this path on your host machine instead: {host_hint}"
+                )
+            raise ValidationError(
+                "Automatic opening is disabled inside Docker. Open the repository folder manually on your host machine."
+            )
+
         try:
             if sys.platform.startswith("win"):
                 os.startfile(str(path))
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", str(path)])
             else:
+                if shutil.which("xdg-open") is None:
+                    raise ValidationError(
+                        f"Automatic opening is not available on this system. Open this path manually instead: {path}"
+                    )
                 subprocess.Popen(["xdg-open", str(path)])
+        except ValidationError:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise ValidationError(f"Unable to open the location automatically: {exc}") from exc
         return str(path)
