@@ -10,3 +10,6 @@ __pycache__/
 htmlcov/
 .DS_Store
 Thumbs.db
+.codex/
+.vscode/mcp.json
+codex_mcp_test.txt

@@ -57,6 +57,7 @@ README.md
 - Generates grounded answers, test scenarios, steps, expected results, and Selenium starter code.
 - Surfaces Confluence links in dashboard results and MCP tool responses.
 - Generates editor MCP config for `.vscode/mcp.json` and `.codex/config.toml`.
+- Includes a workspace `AGENTS.md` so Codex prefers the direct VeriAgent MCP tools for Confluence questions.
 
 ## Quick Start
 
@@ -154,6 +155,29 @@ The backend exposes the MCP server at:
 http://localhost:8000/mcp
 ```
 
+### Recommended setup for Codex
+
+If your main target is Codex in VS Code, the most reliable first-run setup is:
+
+```bash
+codex mcp add veriagent --url http://localhost:8000/mcp
+```
+
+You can also place the same entry in your global Codex config:
+
+```toml
+[mcp_servers.veriagent]
+url = "http://localhost:8000/mcp"
+```
+
+Typical location:
+
+```text
+~/.codex/config.toml
+```
+
+This is the preferred path for Codex. The workspace `.vscode/mcp.json` file is optional and is mainly useful for the generic VS Code MCP workspace flow.
+
 ### VS Code workspace config
 
 Generated file:
@@ -198,6 +222,55 @@ After writing the config:
 4. Verify the `veriagent` MCP server appears in the agent tool list.
 
 If your Codex setup only reads the global config, copy the generated snippet into `~/.codex/config.toml`.
+
+## Testing In Codex VS Code
+
+### Recommended direct-answer test
+
+Use the direct MCP answer tool so the flow matches the dashboard:
+
+```text
+Use veriagent.answer_from_confluence for: "product requirement deadline".
+
+Return only:
+Answer:
+Sources:
+- [title](url)
+```
+
+This uses the same backend QA path as the dashboard rather than making Codex manually inspect multiple tools.
+
+### Other useful tool prompts
+
+```text
+Use veriagent.generate_selenium_test_plan for: "login workflow validation".
+Return the grounded QA plan and source links.
+```
+
+```text
+Use veriagent.generate_selenium_code for: "login workflow validation".
+Return starter Selenium Python code and source links.
+```
+
+```text
+Use veriagent.search_confluence for: "decision documentation".
+List the top matching pages with clickable markdown links only.
+```
+
+### How to verify the MCP server is really being used
+
+1. Run `codex mcp list` and confirm `veriagent` is enabled.
+2. Keep `docker compose up` running.
+3. In another terminal, run:
+
+```bash
+docker compose logs -f backend
+```
+
+4. Send the prompt in Codex.
+5. Look for `/mcp` requests in the backend logs.
+
+If you see `/mcp` traffic and the answer includes Confluence page URLs, Codex is using the VeriAgent MCP server.
 
 ## Local Development
 
@@ -269,14 +342,21 @@ The backend sends only the top 2 to 3 relevant chunks to the model during normal
 
 - Check whether the Confluence page is accessible to the configured account.
 - Try broader search terms.
-- Use Source Explorer to confirm pages can be listed at all.
+- Use the Ask page source panel to confirm pages can be listed at all.
 
 ### MCP config written but not detected
 
 - Restart VS Code fully.
 - Re-open the workspace folder.
 - Verify the workspace path used by the dashboard is the same path opened in VS Code.
-- For Codex-specific setups, copy the generated snippet into `~/.codex/config.toml` if workspace-local config is ignored.
+- For Codex-specific setups, prefer `codex mcp add veriagent --url http://localhost:8000/mcp` or copy the generated snippet into `~/.codex/config.toml`.
+
+### Codex MCP calls seem slow or get cancelled
+
+- Prefer direct prompts that call `veriagent.answer_from_confluence` instead of asking Codex to explore and decide on tools itself.
+- Keep the request narrow, such as `product requirement deadline` instead of a broad question.
+- If Ollama is running on CPU only, the grounded answer step can still take tens of seconds.
+- If a chat shows tool calls being cancelled, start a fresh chat and retry with the direct tool prompt above.
 
 ### Docker build cannot start
 
