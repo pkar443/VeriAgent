@@ -408,6 +408,11 @@ def show_api_error(error: str | None) -> None:
         st.error(error)
 
 
+def navigate_to(page: str) -> None:
+    st.session_state["_pending_page_nav"] = page
+    st.rerun()
+
+
 def current_health() -> dict[str, Any] | None:
     data, error = api_get("/api/health")
     if error:
@@ -490,8 +495,7 @@ def setup_page() -> None:
                     st.json(data["metadata"])
     with col3:
         if st.button("Enable VS Code Integration", use_container_width=True):
-            st.session_state["page_nav"] = "VS Code Integration"
-            st.rerun()
+            navigate_to("VS Code Integration")
 
 
 def home_page() -> None:
@@ -714,6 +718,9 @@ def sidebar() -> None:
 
 def main() -> None:
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    pending_page = st.session_state.pop("_pending_page_nav", None)
+    if pending_page is not None:
+        st.session_state["page_nav"] = pending_page
     if "page_nav" not in st.session_state:
         st.session_state["page_nav"] = "Home"
     sidebar()
