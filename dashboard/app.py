@@ -12,7 +12,7 @@ import streamlit.components.v1 as components
 
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:8000").rstrip("/")
 DEFAULT_WORKSPACE_PATH = os.environ.get("DEFAULT_WORKSPACE_PATH", os.getcwd())
-PAGES = ["Home", "Setup", "Ask", "VS Code Integration"]
+PAGES = ["Home", "Setup", "Ask", "Create Page", "VS Code Integration"]
 
 
 st.set_page_config(
@@ -454,6 +454,63 @@ def sync_active_ask_job() -> None:
         st.session_state["ask_job_id"] = None
 
 
+def suggested_page_title(query: str) -> str:
+    cleaned = " ".join(query.strip().split())
+    if not cleaned:
+        return "VeriAgent Draft"
+    trimmed = cleaned[:68].strip()
+    return f"QA Draft - {trimmed}"
+
+
+def build_page_draft_from_ask(result: dict[str, Any]) -> str:
+    query = result.get("query", "").strip() or "VeriAgent QA Draft"
+    sections = result.get("sections", {})
+    lines = [f"# {query}", ""]
+
+    answer = (sections.get("answer") or "").strip()
+    if answer:
+        lines.extend(["## Answer", answer, ""])
+
+    assumptions = (sections.get("assumptions") or "").strip()
+    if assumptions:
+        lines.extend(["## Assumptions", assumptions, ""])
+
+    test_scenarios = (sections.get("test_scenarios") or "").strip()
+    if test_scenarios:
+        lines.extend(["## Test Scenarios", test_scenarios, ""])
+
+    steps = (sections.get("steps") or "").strip()
+    if steps:
+        lines.extend(["## Steps", steps, ""])
+
+    expected_results = (sections.get("expected_results") or "").strip()
+    if expected_results:
+        lines.extend(["## Expected Results", expected_results, ""])
+
+    selenium_code = (sections.get("selenium_code") or "").strip()
+    if selenium_code and selenium_code != "Not requested.":
+        lines.extend(["## Selenium Starter Code", "```python", selenium_code, "```", ""])
+
+    sources = result.get("sources", [])
+    if sources:
+        lines.append("## Sources")
+        for source in sources:
+            title = source.get("title", "Untitled")
+            url = source.get("url", "")
+            lines.append(f"- [{title}]({url})" if url else f"- {title}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def seed_create_page_from_ask(result: dict[str, Any]) -> None:
+    st.session_state["create_page_title"] = suggested_page_title(result.get("query", ""))
+    st.session_state["create_page_content"] = build_page_draft_from_ask(result)
+    st.session_state.setdefault("create_page_space", "")
+    st.session_state.setdefault("create_page_parent_id", "")
+    st.session_state.pop("create_page_result", None)
+
+
 def setup_page() -> None:
     hero("Connect your sources and local model", "Save the runtime configuration used by both the dashboard and the MCP tools, and write a workspace .env file for sharing.")
     config = current_config()
@@ -652,6 +709,10 @@ def ask_page() -> None:
     with summary_cols[2]:
         st.metric("Mode", "QA + sources" if not result.get("generation_error") else "Sources only")
 
+    if st.button("Create Confluence page from this answer", use_container_width=True, key="ask-create-page"):
+        seed_create_page_from_ask(result)
+        navigate_to("Create Page")
+
     left, right = st.columns([1.25, 0.85], gap="large")
     sections = result.get("sections", {})
 
@@ -679,6 +740,122 @@ def ask_page() -> None:
     with right:
         st.subheader("Matched Sources")
         render_matched_sources(result)
+
+
+def create_page_page() -> None:
+    hero(
+        "Draft and publish Confluence pages",
+        "Paste Markdown or plain text, preview it, and publish it through the same backend service that Codex uses through MCP. Publishing is always explicit, so the page is not created until you click the button below.",
+    )
+    st.markdown(
+        """
+        <div class="block-note">
+          <strong>How publishing works:</strong> VeriAgent converts your Markdown or plain text into Confluence storage format, resolves the target space from a space key or numeric space ID, and returns the created page URL. Use a space key like <code>SD</code> when possible.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.session_state.setdefault("create_page_title", "")
+    st.session_state.setdefault("create_page_space", "")
+    st.session_state.setdefault("create_page_parent_id", "")
+    st.session_state.setdefault("create_page_content", "")
+
+    latest_ask = st.session_state.get("ask_result")
+    action_cols = st.columns([0.45, 0.25, 0.30])
+    with action_cols[0]:
+        if latest_ask and st.button("Use latest Ask result as draft", use_container_width=True, key="create-use-ask"):
+            seed_create_page_from_ask(latest_ask)
+            st.success("Loaded the latest grounded answer into the page draft.")
+    with action_cols[1]:
+        if st.button("Clear draft", use_container_width=True, key="create-clear-draft"):
+            st.session_state["create_page_title"] = ""
+            st.session_state["create_page_space"] = ""
+            st.session_state["create_page_parent_id"] = ""
+            st.session_state["create_page_content"] = ""
+            st.session_state.pop("create_page_result", None)
+            st.rerun()
+    with action_cols[2]:
+        if st.session_state.get("create_page_content", "").strip():
+            render_copy_button(st.session_state["create_page_content"], "Copy Draft", "create-page-draft")
+
+    target_col, parent_col = st.columns([0.65, 0.35])
+    with target_col:
+        title = st.text_input(
+            "Page title",
+            key="create_page_title",
+            placeholder="Example: Sprint QA Summary",
+        )
+        space = st.text_input(
+            "Space key or space ID",
+            key="create_page_space",
+            placeholder="Example: SD",
+            help="Use the Confluence space key when you know it. Numeric space IDs are also supported.",
+        )
+    with parent_col:
+        parent_page_id = st.text_input(
+            "Parent page ID",
+            key="create_page_parent_id",
+            placeholder="Optional",
+            help="Leave blank to create the page at the space root.",
+        )
+
+    content_markdown = st.text_area(
+        "Content",
+        key="create_page_content",
+        height=340,
+        placeholder="# Release Readiness\n\nSummarize the release scope, risks, checks, and links here.",
+        help="Markdown and plain text are both supported. VeriAgent converts the content into Confluence storage format during publish.",
+    )
+
+    preview_col, summary_col = st.columns([1.15, 0.85], gap="large")
+    with preview_col:
+        st.subheader("Preview")
+        if content_markdown.strip():
+            st.markdown(content_markdown)
+        else:
+            st.info("Add content to see the page preview before publishing.")
+    with summary_col:
+        st.subheader("Publish Target")
+        st.write(f"**Title:** {title or 'Not set yet'}")
+        st.write(f"**Space:** {space or 'Not set yet'}")
+        st.write(f"**Parent page:** {parent_page_id or 'Space root'}")
+        st.write("**Format:** Markdown or plain text")
+
+    publish_disabled = not title.strip() or not space.strip() or not content_markdown.strip()
+    if st.button("Create Page in Confluence", use_container_width=True, type="primary", disabled=publish_disabled):
+        with st.spinner("Creating the Confluence page..."):
+            data, error = api_post(
+                "/api/confluence/pages",
+                {
+                    "title": title,
+                    "space": space,
+                    "content_markdown": content_markdown,
+                    "parent_page_id": parent_page_id or None,
+                },
+            )
+        if error:
+            st.error(error)
+        else:
+            st.session_state["create_page_result"] = data
+            st.success("Confluence page created successfully.")
+
+    created = st.session_state.get("create_page_result")
+    if not created:
+        return
+
+    result_cols = st.columns(3)
+    with result_cols[0]:
+        st.metric("Created Page ID", created.get("page_id", ""))
+    with result_cols[1]:
+        st.metric("Space", created.get("space_key") or created.get("space_id") or "")
+    with result_cols[2]:
+        st.metric("Status", created.get("status", "created"))
+
+    st.write(f"**Created page:** {created.get('title', 'Untitled')}")
+    if created.get("url"):
+        st.link_button("Open created page", created["url"], use_container_width=False)
+        st.caption(created["url"])
 
 
 def vscode_page() -> None:
@@ -798,6 +975,8 @@ def main() -> None:
         setup_page()
     elif page == "Ask":
         ask_page()
+    elif page == "Create Page":
+        create_page_page()
     elif page == "VS Code Integration":
         vscode_page()
     else:

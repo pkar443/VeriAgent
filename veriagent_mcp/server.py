@@ -11,7 +11,8 @@ def build_mcp_server(container: ServiceContainer) -> FastMCP:
         "VeriAgent",
         instructions=(
             "Ground all answers in Confluence content and return URLs. Prefer retrieval-first tools so the calling "
-            "agent can summarize from Confluence context directly. Use local Ollama generation only when explicitly requested."
+            "agent can summarize from Confluence context directly. Use local Ollama generation only when explicitly requested. "
+            "When publishing content, use the dedicated Confluence page creation tool and return the created page URL."
         ),
     )
 
@@ -100,6 +101,25 @@ def build_mcp_server(container: ServiceContainer) -> FastMCP:
         try:
             pages = container.confluence().list_pages(query=query, limit=limit)
             return {"ok": True, "query": query, "results": [page.model_dump() for page in pages]}
+        except VeriAgentError as exc:
+            return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
+
+    @server.tool()
+    def create_confluence_page(title: str, space: str, content_markdown: str, parent_page_id: str = "") -> dict:
+        """Create a Confluence page from Markdown or plain-text content and return the created page URL."""
+        try:
+            created = container.confluence().create_page(
+                title=title,
+                space=space,
+                content_markdown=content_markdown,
+                parent_page_id=parent_page_id or None,
+            )
+            return {
+                "ok": True,
+                "mode": "publish",
+                "page": created.model_dump(),
+                "message": f"Created Confluence page '{created.title}'.",
+            }
         except VeriAgentError as exc:
             return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
 

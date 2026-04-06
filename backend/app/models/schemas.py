@@ -46,6 +46,25 @@ class PageRecord(SourceRecord):
     content: str = ""
 
 
+class CreatePageRequest(BaseModel):
+    title: str
+    space: str
+    content_markdown: str
+    parent_page_id: str | None = None
+
+
+class CreatePageResponse(BaseModel):
+    title: str
+    page_id: str
+    url: str
+    status: str = "created"
+    space_id: str
+    space_key: str = ""
+    space_name: str = ""
+    parent_page_id: str | None = None
+    content_format: str = "markdown"
+
+
 class RetrievedChunk(BaseModel):
     chunk_id: str
     title: str

@@ -11,6 +11,8 @@ from backend.app.models.schemas import (
     ConfigResponse,
     ContextRequest,
     ContextResponse,
+    CreatePageRequest,
+    CreatePageResponse,
     HealthResponse,
     MCPConfigRequest,
     MCPConfigResponse,
@@ -59,6 +61,16 @@ def list_pages(request: Request, limit: int = 25, query: str = "") -> list[Sourc
 @router.get("/confluence/pages/{page_id}", response_model=PageRecord)
 def get_page(page_id: str, request: Request) -> PageRecord:
     return get_container(request).confluence().get_page(page_id)
+
+
+@router.post("/confluence/pages", response_model=CreatePageResponse)
+def create_page(payload: CreatePageRequest, request: Request) -> CreatePageResponse:
+    return get_container(request).confluence().create_page(
+        title=payload.title,
+        space=payload.space,
+        content_markdown=payload.content_markdown,
+        parent_page_id=payload.parent_page_id,
+    )
 
 
 @router.post("/qa/ask", response_model=AskResponse)

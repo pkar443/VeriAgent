@@ -4,6 +4,7 @@ import html
 import re
 
 from bs4 import BeautifulSoup
+from markdown import markdown
 
 
 def clean_html_content(raw_html: str) -> str:
@@ -27,3 +28,16 @@ def clean_html_content(raw_html: str) -> str:
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n\s*\n\s*\n+", "\n\n", text)
     return text.strip()
+
+
+def markdown_to_storage_html(markdown_text: str) -> str:
+    content = markdown_text.strip()
+    if not content:
+        return ""
+
+    rendered = markdown(
+        content,
+        extensions=["fenced_code", "tables", "sane_lists", "nl2br"],
+        output_format="html",
+    )
+    return rendered.strip()

@@ -56,6 +56,7 @@ README.md
 - Uses a strict QA prompt to reduce hallucination on a smaller local model.
 - Generates grounded answers, test scenarios, steps, expected results, and Selenium starter code.
 - Surfaces Confluence links in dashboard results and MCP tool responses.
+- Creates new Confluence pages from dashboard drafts or MCP publish calls.
 - Generates editor MCP config for `.vscode/mcp.json` and `.codex/config.toml`.
 - Includes a workspace `AGENTS.md` so Codex prefers the direct VeriAgent MCP tools for Confluence questions.
 - Uses local Ollama generation for the dashboard, while MCP tools default to retrieval-only context so Codex can write the final answer itself.
@@ -142,6 +143,14 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 - Shows the matched Confluence pages beside the answer.
 - Lets you preview the selected page and matched excerpts used for grounding.
 - Always returns source links and snippets, even if generation fails.
+
+### Create Page
+
+- Accepts a page title, space key or space ID, optional parent page ID, and Markdown or plain-text content.
+- Shows a preview before publishing.
+- Can prefill a draft from the latest Ask result so grounded answers can be published without re-copying them.
+- Publishes through the same backend Confluence service used by MCP.
+- Returns the created Confluence link and page ID.
 
 ### VS Code Integration
 
@@ -250,6 +259,29 @@ Sources:
 
 This retrieves the same grounded Confluence context used by the backend retrieval layer without sending the final answer through Ollama.
 
+### Confluence publish test
+
+Let Codex draft the page body, then publish it through VeriAgent:
+
+```text
+Draft a short Confluence page for the sprint QA summary using Markdown.
+After you show me the draft, publish it with veriagent.create_confluence_page using:
+- title: Sprint QA Summary
+- space: SD
+- parent_page_id: 295067
+```
+
+If you already have the content, you can publish directly:
+
+```text
+Use veriagent.create_confluence_page with:
+- title: Release Readiness Notes
+- space: SD
+- content_markdown: # Release Readiness
+
+  Scope, checks, risks, and links go here.
+```
+
 ### Optional local-LLM answer path
 
 If you explicitly want the MCP server to use local Gemma for the final answer, ask for:
@@ -321,6 +353,7 @@ Environment defaults:
 - `POST /api/ollama/test`
 - `GET /api/confluence/pages`
 - `GET /api/confluence/pages/{page_id}`
+- `POST /api/confluence/pages`
 - `POST /api/qa/ask`
 - `POST /api/qa/jobs`
 - `GET /api/qa/jobs/{job_id}`
@@ -392,6 +425,7 @@ The backend sends only the top 2 to 3 relevant chunks to the model during normal
 - No user auth layer on the backend because this MVP is intended for local use.
 - Confluence search quality depends on page access and Cloud API result quality.
 - Selenium code is starter code and may still require locator refinement.
+- Page publishing currently creates new pages only; it does not update existing pages yet.
 - Automatic file opening is environment-dependent and may not work inside every Docker setup.
 - CPU-only Ollama inference can still be slow even on high-RAM machines; RAM helps model fit, but token generation speed is mostly CPU or GPU bound.
 - Thinking-capable models can be much slower when thinking is enabled. VeriAgent defaults `OLLAMA_THINKING_ENABLED=false` for faster dashboard responses.
