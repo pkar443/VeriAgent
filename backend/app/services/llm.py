@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from abc import ABC, abstractmethod
 
@@ -7,6 +8,8 @@ import httpx
 
 from backend.app.core.exceptions import ConfigurationError, ExternalServiceError
 from backend.app.models.schemas import TestResult
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProvider(ABC):
@@ -16,11 +19,19 @@ class LLMProvider(ABC):
 
 
 class OllamaProvider(LLMProvider):
-    def __init__(self, base_url: str, model: str, timeout_seconds: int = 120, retries: int = 2):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        timeout_seconds: int = 120,
+        retries: int = 2,
+        thinking_enabled: bool = False,
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.retries = retries
+        self.thinking_enabled = thinking_enabled
 
     def generate(self, prompt: str) -> str:
         if not self.base_url:
@@ -28,7 +39,12 @@ class OllamaProvider(LLMProvider):
         if not self.model:
             raise ConfigurationError("Ollama model is not configured.")
 
-        payload = {"model": self.model, "prompt": prompt, "stream": False}
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "think": self.thinking_enabled,
+        }
         last_error: Exception | None = None
 
         for attempt in range(1, self.retries + 2):
@@ -49,6 +65,22 @@ class OllamaProvider(LLMProvider):
                 text = (data.get("response") or "").strip()
                 if not text:
                     raise ExternalServiceError("Ollama returned an empty response.")
+                logger.info(
+                    (
+                        "Ollama generation completed model=%s thinking_enabled=%s prompt_chars=%s response_chars=%s "
+                        "prompt_eval_count=%s eval_count=%s load_ms=%s prompt_eval_ms=%s eval_ms=%s total_ms=%s"
+                    ),
+                    self.model,
+                    self.thinking_enabled,
+                    len(prompt),
+                    len(text),
+                    data.get("prompt_eval_count"),
+                    data.get("eval_count"),
+                    _ns_to_ms(data.get("load_duration")),
+                    _ns_to_ms(data.get("prompt_eval_duration")),
+                    _ns_to_ms(data.get("eval_duration")),
+                    _ns_to_ms(data.get("total_duration")),
+                )
                 return text
             except (httpx.HTTPError, ExternalServiceError) as exc:
                 last_error = exc
@@ -83,5 +115,12 @@ class OllamaProvider(LLMProvider):
                 "version": version_response.json().get("version"),
                 "model_loaded": model_loaded,
                 "model_name": self.model,
+                "thinking_enabled": self.thinking_enabled,
             },
         )
+
+
+def _ns_to_ms(value: int | None) -> float | None:
+    if value is None:
+        return None
+    return round(value / 1_000_000, 2)

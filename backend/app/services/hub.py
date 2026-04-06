@@ -34,6 +34,7 @@ class ServiceContainer:
             model=runtime.ollama_model,
             timeout_seconds=self.settings.ollama_timeout_seconds,
             retries=self.settings.ollama_retries,
+            thinking_enabled=self.settings.ollama_thinking_enabled,
         )
 
     def retrieval(self) -> RetrievalService:

@@ -33,6 +33,7 @@ class AppSettings(BaseSettings):
     max_chunk_characters: int = Field(default=1800, validation_alias="MAX_CHUNK_CHARACTERS")
     ollama_timeout_seconds: int = Field(default=120, validation_alias="OLLAMA_TIMEOUT_SECONDS")
     ollama_retries: int = Field(default=2, validation_alias="OLLAMA_RETRIES")
+    ollama_thinking_enabled: bool = Field(default=False, validation_alias="OLLAMA_THINKING_ENABLED")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
 
     model_config = SettingsConfigDict(

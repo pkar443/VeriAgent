@@ -100,6 +100,7 @@ class ConfigStore:
             "MAX_CHUNK_CHARACTERS": str(settings.max_chunk_characters),
             "OLLAMA_TIMEOUT_SECONDS": str(settings.ollama_timeout_seconds),
             "OLLAMA_RETRIES": str(settings.ollama_retries),
+            "OLLAMA_THINKING_ENABLED": str(settings.ollama_thinking_enabled).lower(),
             "LOG_LEVEL": settings.log_level,
         }
 

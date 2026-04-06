@@ -75,6 +75,7 @@ CONFLUENCE_BASE_URL=https://your-domain.atlassian.net/wiki
 CONFLUENCE_EMAIL=you@example.com
 CONFLUENCE_API_TOKEN=your_token
 OLLAMA_MODEL=gemma4:e2b
+OLLAMA_THINKING_ENABLED=false
 APP_PORT=8000
 MCP_PORT=8000
 PUBLIC_BACKEND_URL=http://localhost:8000
@@ -184,6 +185,7 @@ This is the preferred path for Codex. The workspace `.vscode/mcp.json` file is o
 - Dashboard `Ask` keeps using local Ollama and `gemma4:e2b`.
 - MCP tools for Codex default to retrieval-only context and do not call Ollama unless `use_local_llm=true` is explicitly requested.
 - This keeps Codex answers grounded in Confluence while letting Codex do the final summarization in the editor.
+- `OLLAMA_THINKING_ENABLED=false` is recommended for faster dashboard answers with thinking-capable models such as `gemma4:e2b`.
 
 ### VS Code workspace config
 
@@ -389,6 +391,7 @@ The backend sends only the top 2 to 3 relevant chunks to the model during normal
 - Selenium code is starter code and may still require locator refinement.
 - Automatic file opening is environment-dependent and may not work inside every Docker setup.
 - CPU-only Ollama inference can still be slow even on high-RAM machines; RAM helps model fit, but token generation speed is mostly CPU or GPU bound.
+- Thinking-capable models can be much slower when thinking is enabled. VeriAgent defaults `OLLAMA_THINKING_ENABLED=false` for faster dashboard responses.
 
 ## Future Improvements
 
