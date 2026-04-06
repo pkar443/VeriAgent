@@ -56,6 +56,10 @@ README.md
 - Uses a strict QA prompt to reduce hallucination on a smaller local model.
 - Generates grounded answers, test scenarios, steps, expected results, and Selenium starter code.
 - Surfaces Confluence links in dashboard results and MCP tool responses.
+- Stores shared drafts so Codex and the dashboard can collaborate through one review queue.
+- Uses local Gemma to turn rough notes into formatted Confluence pages, Jira tickets, or PRD drafts.
+- Creates new Confluence pages from dashboard drafts or MCP publish calls.
+- Creates Jira issues from dashboard drafts or direct MCP publish calls.
 - Generates editor MCP config for `.vscode/mcp.json` and `.codex/config.toml`.
 - Includes a workspace `AGENTS.md` so Codex prefers the direct VeriAgent MCP tools for Confluence questions.
 - Uses local Ollama generation for the dashboard, while MCP tools default to retrieval-only context so Codex can write the final answer itself.
@@ -121,10 +125,33 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 
 ## Dashboard Guide
 
-### Home
+### Overview
 
 - Shows backend, Confluence, Ollama, and MCP health.
+- Highlights recent drafts and quick actions.
 - Displays the advertised MCP URL used for editor setup.
+
+### Ask
+
+- Accepts a grounded question.
+- Lets you choose a fast, balanced, or deep grounding mode.
+- Optionally generates Selenium starter code.
+- Runs long Ollama answers as backend jobs so they can continue even if you switch pages in the dashboard.
+- Auto-refreshes the answer panel while the backend job is still running.
+- Shows the matched Confluence pages beside the answer.
+- Lets you send the answer directly into Studio as a draft.
+
+### Studio
+
+- Accepts rough raw text, pasted notes, or Codex handoff drafts.
+- Uses local Gemma to structure the input into a Confluence page, Jira ticket, or PRD draft.
+- Uses a three-column workbench layout: input on the left, live preview in the center, and publish target controls on the right.
+- Auto-discovers Confluence spaces, recent parent pages, Jira projects, and Jira issue types from the connected Atlassian site.
+- When Ask sends a result into Studio, VeriAgent seeds a Confluence-style draft first, then auto-converts that same content into Jira or PRD format the first time you switch targets.
+- Keeps separate per-target variants in memory so your Jira, PRD, and Confluence edits do not overwrite each other while you switch between them.
+- Renders a styled preview before publishing.
+- Stores shared drafts in a bottom draft inbox rail and remembers the selected publish target when drafts are re-opened.
+- Publishes to Confluence or Jira from the same review surface.
 
 ### Setup
 
@@ -133,22 +160,13 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 - Lets you test Confluence credentials and Ollama connectivity.
 - Includes a shortcut into the VS Code integration page.
 
-### Ask
-
-- Accepts a grounded question.
-- Lets you choose grounding depth.
-- Optionally generates Selenium starter code.
-- Runs long Ollama answers as backend jobs so they can continue even if you switch pages in the dashboard.
-- Shows the matched Confluence pages beside the answer.
-- Lets you preview the selected page and matched excerpts used for grounding.
-- Always returns source links and snippets, even if generation fails.
-
-### VS Code Integration
+### Integration
 
 - Shows the MCP server URL.
 - Generates workspace config for `.vscode/mcp.json` and `.codex/config.toml`.
 - Writes config into the selected workspace path when possible.
 - Falls back to copyable config blocks when automatic writing is not enough.
+- Documents the Codex-to-dashboard draft handoff flow.
 
 ## MCP Setup Instructions
 
@@ -250,6 +268,55 @@ Sources:
 
 This retrieves the same grounded Confluence context used by the backend retrieval layer without sending the final answer through Ollama.
 
+### Confluence publish test
+
+Let Codex draft the page body, then publish it through VeriAgent:
+
+```text
+Draft a short Confluence page for the sprint QA summary using Markdown.
+After you show me the draft, publish it with veriagent.create_confluence_page using:
+- title: Sprint QA Summary
+- space: SD
+- parent_page_id: 295067
+```
+
+If you already have the content, you can publish directly:
+
+```text
+Use veriagent.create_confluence_page with:
+- title: Release Readiness Notes
+- space: SD
+- content_markdown: # Release Readiness
+
+  Scope, checks, risks, and links go here.
+```
+
+### Draft handoff test
+
+Have Codex hand a draft back to the dashboard for review:
+
+```text
+Draft a release readiness page in Markdown, then save it to VeriAgent with:
+- title: Release Readiness Draft
+- target: confluence_page
+- structured_markdown: <the markdown you just drafted>
+Use the save_dashboard_draft tool.
+```
+
+### Jira publish test
+
+Publish a Jira ticket directly through VeriAgent:
+
+```text
+Use veriagent.create_jira_ticket with:
+- summary: Login timeout after release build
+- project_key: SD
+- issue_type: Bug
+- description_markdown: ## Problem
+
+  Users hit a timeout after entering credentials on the release build.
+```
+
 ### Optional local-LLM answer path
 
 If you explicitly want the MCP server to use local Gemma for the final answer, ask for:
@@ -321,6 +388,14 @@ Environment defaults:
 - `POST /api/ollama/test`
 - `GET /api/confluence/pages`
 - `GET /api/confluence/pages/{page_id}`
+- `POST /api/confluence/pages`
+- `POST /api/jira/issues`
+- `GET /api/studio/drafts`
+- `GET /api/studio/drafts/{draft_id}`
+- `POST /api/studio/drafts`
+- `POST /api/studio/transform`
+- `POST /api/studio/preview`
+- `POST /api/studio/publish`
 - `POST /api/qa/ask`
 - `POST /api/qa/jobs`
 - `GET /api/qa/jobs/{job_id}`
@@ -392,6 +467,8 @@ The backend sends only the top 2 to 3 relevant chunks to the model during normal
 - No user auth layer on the backend because this MVP is intended for local use.
 - Confluence search quality depends on page access and Cloud API result quality.
 - Selenium code is starter code and may still require locator refinement.
+- Page publishing currently creates new pages only; it does not update existing pages yet.
+- Jira publishing currently creates issues directly; it does not update existing issues yet.
 - Automatic file opening is environment-dependent and may not work inside every Docker setup.
 - CPU-only Ollama inference can still be slow even on high-RAM machines; RAM helps model fit, but token generation speed is mostly CPU or GPU bound.
 - Thinking-capable models can be much slower when thinking is enabled. VeriAgent defaults `OLLAMA_THINKING_ENABLED=false` for faster dashboard responses.
