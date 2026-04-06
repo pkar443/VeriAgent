@@ -96,6 +96,19 @@ class AskResponse(BaseModel):
     generation_error: str | None = None
 
 
+class AskJobResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "completed", "failed"]
+    query: str
+    top_k: int
+    generate_selenium: bool
+    submitted_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    result: AskResponse | None = None
+    error: str | None = None
+
+
 class ServiceStatus(BaseModel):
     name: str
     ok: bool

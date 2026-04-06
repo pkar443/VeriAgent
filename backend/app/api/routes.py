@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 
 from backend.app.models.schemas import (
     AskRequest,
+    AskJobResponse,
     AskResponse,
     ConfigResponse,
     ContextRequest,
@@ -67,6 +68,20 @@ def ask_from_confluence(payload: AskRequest, request: Request) -> AskResponse:
         top_k=payload.top_k,
         generate_selenium=payload.generate_selenium,
     )
+
+
+@router.post("/qa/jobs", response_model=AskJobResponse)
+def create_ask_job(payload: AskRequest, request: Request) -> AskJobResponse:
+    return get_container(request).ask_jobs().submit(
+        query=payload.query,
+        top_k=payload.top_k,
+        generate_selenium=payload.generate_selenium,
+    )
+
+
+@router.get("/qa/jobs/{job_id}", response_model=AskJobResponse)
+def get_ask_job(job_id: str, request: Request) -> AskJobResponse:
+    return get_container(request).ask_jobs().get(job_id)
 
 
 @router.post("/qa/context", response_model=ContextResponse)

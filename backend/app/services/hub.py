@@ -5,6 +5,7 @@ from backend.app.models.schemas import ConfigResponse, RuntimeConfig, UpdateConf
 from backend.app.services.config_store import ConfigStore
 from backend.app.services.confluence import ConfluenceClient
 from backend.app.services.integration import IntegrationService
+from backend.app.services.jobs import AskJobManager
 from backend.app.services.llm import OllamaProvider
 from backend.app.services.qa import QAService
 from backend.app.services.retrieval import RetrievalService
@@ -14,6 +15,7 @@ class ServiceContainer:
     def __init__(self, settings: AppSettings):
         self.settings = settings
         self.config_store = ConfigStore(settings.runtime_config_path)
+        self._ask_jobs = AskJobManager(self.qa)
 
     def runtime_config(self) -> RuntimeConfig:
         return self.config_store.effective_config(self.settings)
@@ -43,5 +45,11 @@ class ServiceContainer:
     def qa(self) -> QAService:
         return QAService(self.retrieval(), self.ollama())
 
+    def ask_jobs(self) -> AskJobManager:
+        return self._ask_jobs
+
     def integration(self) -> IntegrationService:
         return IntegrationService(self.settings)
+
+    def shutdown(self) -> None:
+        self._ask_jobs.shutdown()

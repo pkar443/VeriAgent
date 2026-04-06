@@ -429,6 +429,31 @@ def current_config() -> dict[str, Any] | None:
     return data
 
 
+def sync_active_ask_job() -> None:
+    job_id = st.session_state.get("ask_job_id")
+    if not job_id:
+        return
+
+    data, error = api_get(f"/api/qa/jobs/{job_id}")
+    if error:
+        st.session_state["ask_job_error"] = error
+        return
+
+    st.session_state["ask_job_state"] = data
+    st.session_state["ask_job_error"] = None
+
+    status = data.get("status")
+    if status == "completed" and data.get("result"):
+        st.session_state["ask_result"] = data["result"]
+        st.session_state["page_preview_cache"] = {}
+        sources = data["result"].get("sources", [])
+        if sources:
+            st.session_state["ask_selected_source_page"] = sources[0].get("page_id")
+        st.session_state["ask_job_id"] = None
+    elif status == "failed":
+        st.session_state["ask_job_id"] = None
+
+
 def setup_page() -> None:
     hero("Connect your sources and local model", "Save the runtime configuration used by both the dashboard and the MCP tools, and write a workspace .env file for sharing.")
     config = current_config()
@@ -551,7 +576,7 @@ def home_page() -> None:
 def ask_page() -> None:
     hero(
         "Ask grounded questions with live source context",
-        "Run one query and inspect the matched Confluence pages beside the answer. VeriAgent searches Confluence live and only sends the top-ranked chunks to Ollama.",
+        "Run one query and inspect the matched Confluence pages beside the answer. VeriAgent searches Confluence live, sends only the top-ranked chunks to Ollama, and now keeps long-running answers alive in the backend even if you switch pages.",
     )
     st.markdown(
         """
@@ -575,17 +600,42 @@ def ask_page() -> None:
 
     if submit:
         data, error = api_post(
-            "/api/qa/ask",
+            "/api/qa/jobs",
             {"query": query, "top_k": top_k, "generate_selenium": generate_selenium},
         )
         if error:
             st.error(error)
         else:
-            st.session_state["ask_result"] = data
-            st.session_state["page_preview_cache"] = {}
-            sources = data.get("sources", [])
-            if sources:
-                st.session_state["ask_selected_source_page"] = sources[0].get("page_id")
+            st.session_state["ask_job_id"] = data.get("job_id")
+            st.session_state["ask_job_state"] = data
+            st.session_state["ask_job_error"] = None
+            st.session_state.pop("ask_result", None)
+            st.success("Background QA job started. You can leave this page and come back while Gemma keeps working.")
+
+    active_job = st.session_state.get("ask_job_state")
+    active_job_error = st.session_state.get("ask_job_error")
+    if active_job and active_job.get("status") in {"queued", "running"}:
+        st.info(
+            f"Background QA job is {active_job.get('status')}. "
+            "Use Refresh status at any time, or switch pages and return later."
+        )
+        st.caption(f"Active query: {active_job.get('query', '')}")
+        refresh_col, clear_col = st.columns([0.7, 0.3])
+        with refresh_col:
+            if st.button("Refresh status", use_container_width=True, key="ask-refresh-status"):
+                sync_active_ask_job()
+                st.rerun()
+        with clear_col:
+            if st.button("Clear tracker", use_container_width=True, key="ask-clear-job"):
+                st.session_state.pop("ask_job_id", None)
+                st.session_state.pop("ask_job_state", None)
+                st.session_state.pop("ask_job_error", None)
+                st.rerun()
+    elif active_job and active_job.get("status") == "failed":
+        st.error(active_job.get("error") or "Background QA job failed.")
+
+    if active_job_error:
+        st.warning(active_job_error)
 
     result = st.session_state.get("ask_result")
     if not result:
@@ -725,11 +775,15 @@ def sidebar() -> None:
         unsafe_allow_html=True,
     )
     st.sidebar.radio("Navigate", PAGES, key="page_nav")
+    active_job = st.session_state.get("ask_job_state")
+    if active_job and active_job.get("status") in {"queued", "running"}:
+        st.sidebar.info(f"QA job {active_job.get('status')}: {active_job.get('query', '')[:42]}")
     st.sidebar.caption(f"Backend: {BACKEND_URL}")
 
 
 def main() -> None:
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    sync_active_ask_job()
     pending_page = st.session_state.pop("_pending_page_nav", None)
     if pending_page is not None:
         st.session_state["page_nav"] = pending_page

@@ -26,7 +26,10 @@ mcp_server.settings.streamable_http_path = "/"
 async def lifespan(app: FastAPI):
     app.state.container = container
     async with mcp_server.session_manager.run():
-        yield
+        try:
+            yield
+        finally:
+            container.shutdown()
 
 
 app = FastAPI(

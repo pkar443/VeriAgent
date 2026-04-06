@@ -138,6 +138,7 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 - Accepts a grounded question.
 - Lets you choose grounding depth.
 - Optionally generates Selenium starter code.
+- Runs long Ollama answers as backend jobs so they can continue even if you switch pages in the dashboard.
 - Shows the matched Confluence pages beside the answer.
 - Lets you preview the selected page and matched excerpts used for grounding.
 - Always returns source links and snippets, even if generation fails.
@@ -321,6 +322,8 @@ Environment defaults:
 - `GET /api/confluence/pages`
 - `GET /api/confluence/pages/{page_id}`
 - `POST /api/qa/ask`
+- `POST /api/qa/jobs`
+- `GET /api/qa/jobs/{job_id}`
 - `POST /api/qa/context`
 - `POST /api/integration/config`
 - `POST /api/integration/enable`
