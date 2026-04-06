@@ -747,14 +747,26 @@ def seed_studio_from_ask(result: dict[str, Any]) -> None:
             lines.append(f"- [{title}]({url})" if url else f"- {title}")
         lines.append("")
 
+    title = f"QA Draft - {result.get('query', 'VeriAgent')[:68].strip()}"
+    raw_input = sections.get("raw_output", "") or sections.get("answer", "") or result.get("query", "")
+    markdown = "\n".join(lines).strip()
+    base_variant = build_studio_variant(
+        title=title,
+        raw_input=raw_input,
+        markdown=markdown,
+        preview_html="",
+        assumptions=sections.get("assumptions", ""),
+    )
+    base_variant = ensure_variant_preview("confluence_page", base_variant)
+
     studio_queue_update(
         {
             "studio_draft_id": "",
-            "studio_title": f"QA Draft - {result.get('query', 'VeriAgent')[:68].strip()}",
+            "studio_title": title,
             "studio_target": "confluence_page",
             "studio_target_picker": "Confluence Page",
-            "studio_raw_input": sections.get("raw_output", "") or sections.get("answer", "") or result.get("query", ""),
-            "studio_markdown": "\n".join(lines).strip(),
+            "studio_raw_input": raw_input,
+            "studio_markdown": markdown,
             "studio_preview_html": "",
             "studio_assumptions": sections.get("assumptions", ""),
             "studio_source": "dashboard-ask",
@@ -765,6 +777,8 @@ def seed_studio_from_ask(result: dict[str, Any]) -> None:
             "studio_jira_issue_type": "Task",
             "studio_jira_issue_type_selector": "Task",
             "studio_jira_labels": "",
+            "studio_variants": {"confluence_page": base_variant},
+            "studio_conversion_notice": "",
             "studio_publish_result": None,
         },
         page="Studio",
@@ -773,16 +787,27 @@ def seed_studio_from_ask(result: dict[str, Any]) -> None:
 
 def load_draft_into_studio(draft: dict[str, Any]) -> None:
     metadata = draft.get("metadata", {})
+    target = draft.get("target", "confluence_page")
+    loaded_variant = build_studio_variant(
+        title=draft.get("title", ""),
+        raw_input=draft.get("raw_input", ""),
+        markdown=draft.get("structured_markdown", ""),
+        preview_html=draft.get("preview_html", ""),
+        assumptions=metadata.get("assumptions", ""),
+    )
+    loaded_variant = ensure_variant_preview(target, loaded_variant)
+    raw_variants = metadata.get("variants")
+    variants = raw_variants if isinstance(raw_variants, dict) else {target: loaded_variant}
     studio_queue_update(
         {
             "studio_draft_id": draft.get("draft_id", ""),
-            "studio_title": draft.get("title", ""),
-            "studio_target": draft.get("target", "confluence_page"),
-            "studio_target_picker": TARGET_LABELS.get(draft.get("target", "confluence_page"), "Confluence Page"),
-            "studio_raw_input": draft.get("raw_input", ""),
-            "studio_markdown": draft.get("structured_markdown", ""),
-            "studio_preview_html": draft.get("preview_html", ""),
-            "studio_assumptions": metadata.get("assumptions", ""),
+            "studio_title": loaded_variant["title"],
+            "studio_target": target,
+            "studio_target_picker": TARGET_LABELS.get(target, "Confluence Page"),
+            "studio_raw_input": loaded_variant["raw_input"],
+            "studio_markdown": loaded_variant["markdown"],
+            "studio_preview_html": loaded_variant["preview_html"],
+            "studio_assumptions": loaded_variant["assumptions"],
             "studio_source": draft.get("source", "dashboard"),
             "studio_space": metadata.get("confluence_space", ""),
             "studio_parent_page_id": metadata.get("parent_page_id", ""),
@@ -792,6 +817,8 @@ def load_draft_into_studio(draft: dict[str, Any]) -> None:
             "studio_jira_issue_type": metadata.get("issue_type", "Task"),
             "studio_jira_issue_type_selector": metadata.get("issue_type", "Task"),
             "studio_jira_labels": ", ".join(metadata.get("labels", [])) if isinstance(metadata.get("labels"), list) else "",
+            "studio_variants": variants,
+            "studio_conversion_notice": "",
             "studio_publish_result": None,
         },
         page="Studio",
@@ -800,6 +827,181 @@ def load_draft_into_studio(draft: dict[str, Any]) -> None:
 
 def parse_label_csv(raw_value: str) -> list[str]:
     return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+def build_studio_variant(
+    *,
+    title: str,
+    raw_input: str,
+    markdown: str,
+    preview_html: str,
+    assumptions: str,
+) -> dict[str, str]:
+    return {
+        "title": title,
+        "raw_input": raw_input,
+        "markdown": markdown,
+        "preview_html": preview_html,
+        "assumptions": assumptions,
+    }
+
+
+def variant_has_content(variant: dict[str, Any] | None) -> bool:
+    if not isinstance(variant, dict):
+        return False
+    return bool(str(variant.get("markdown", "")).strip() or str(variant.get("raw_input", "")).strip())
+
+
+def current_studio_variant() -> dict[str, str]:
+    return build_studio_variant(
+        title=st.session_state.get("studio_title", ""),
+        raw_input=st.session_state.get("studio_raw_input", ""),
+        markdown=st.session_state.get("studio_markdown", ""),
+        preview_html=st.session_state.get("studio_preview_html", ""),
+        assumptions=st.session_state.get("studio_assumptions", ""),
+    )
+
+
+def merge_current_variant_into_state() -> dict[str, dict[str, str]]:
+    variants = dict(st.session_state.get("studio_variants", {}))
+    current_target = st.session_state.get("studio_target", "confluence_page")
+    variants[current_target] = current_studio_variant()
+    st.session_state["studio_variants"] = variants
+    return variants
+
+
+def choose_variant_source(
+    variants: dict[str, dict[str, str]],
+    current_target: str,
+) -> tuple[dict[str, str] | None, str | None]:
+    preferred_targets = ["confluence_page", current_target, "prd", "jira_ticket"]
+    for target in preferred_targets:
+        variant = variants.get(target)
+        if variant_has_content(variant):
+            return variant, target
+    return None, None
+
+
+def variant_payload(target: str, variant: dict[str, str], variants: dict[str, dict[str, str]], *, notice: str = "") -> dict[str, Any]:
+    return {
+        "studio_target": target,
+        "studio_target_picker": TARGET_LABELS[target],
+        "studio_title": variant.get("title", ""),
+        "studio_raw_input": variant.get("raw_input", ""),
+        "studio_markdown": variant.get("markdown", ""),
+        "studio_preview_html": variant.get("preview_html", ""),
+        "studio_assumptions": variant.get("assumptions", ""),
+        "studio_variants": variants,
+        "studio_publish_result": None,
+        "studio_conversion_notice": notice,
+    }
+
+
+def transform_variant_from_source(
+    *,
+    target: str,
+    source_variant: dict[str, str],
+    source_target: str,
+) -> tuple[dict[str, str] | None, str | None]:
+    source_markdown = source_variant.get("markdown", "").strip()
+    source_raw_input = source_variant.get("raw_input", "").strip()
+    source_material = source_markdown or source_raw_input
+    if not source_material:
+        return None, "There is no draft content to convert yet."
+
+    data, error = api_post(
+        "/api/studio/transform",
+        {
+            "target": target,
+            "raw_input": source_material,
+            "title": source_variant.get("title", ""),
+            "existing_markdown": "",
+            "context_notes": (
+                f"Convert this {TARGET_LABELS.get(source_target, source_target)} draft into a "
+                f"{TARGET_LABELS.get(target, target)}. Preserve facts, sources, and assumptions."
+            ),
+        },
+        timeout=300,
+    )
+    if error:
+        return None, error
+
+    return (
+        build_studio_variant(
+            title=data.get("title", source_variant.get("title", "")),
+            raw_input=source_raw_input or source_material,
+            markdown=data.get("structured_markdown", ""),
+            preview_html=data.get("preview_html", ""),
+            assumptions=data.get("assumptions", ""),
+        ),
+        None,
+    )
+
+
+def ensure_variant_preview(target: str, variant: dict[str, str]) -> dict[str, str]:
+    if not variant.get("markdown", "").strip() or variant.get("preview_html", "").strip():
+        return variant
+    data, error = api_post(
+        "/api/studio/preview",
+        {
+            "target": target,
+            "title": variant.get("title", ""),
+            "structured_markdown": variant.get("markdown", ""),
+        },
+        timeout=120,
+    )
+    if error:
+        return variant
+    updated = dict(variant)
+    updated["preview_html"] = data.get("preview_html", "")
+    return updated
+
+
+def switch_studio_target(target: str) -> None:
+    current_target = st.session_state.get("studio_target", "confluence_page")
+    variants = merge_current_variant_into_state()
+
+    existing_variant = variants.get(target)
+    notice = ""
+    if not variant_has_content(existing_variant):
+        source_variant, source_target = choose_variant_source(variants, current_target)
+        if source_variant and source_target:
+            with st.spinner(f"Converting the current {TARGET_LABELS.get(source_target, source_target)} draft into a {TARGET_LABELS[target]}..."):
+                generated_variant, error = transform_variant_from_source(
+                    target=target,
+                    source_variant=source_variant,
+                    source_target=source_target,
+                )
+            if error:
+                st.warning(error)
+                fallback_variant = build_studio_variant(
+                    title=source_variant.get("title", ""),
+                    raw_input=source_variant.get("raw_input", ""),
+                    markdown="",
+                    preview_html="",
+                    assumptions=source_variant.get("assumptions", ""),
+                )
+                variants[target] = fallback_variant
+                existing_variant = fallback_variant
+            else:
+                variants[target] = generated_variant or {}
+                existing_variant = generated_variant or {}
+                notice = f"{TARGET_LABELS[target]} was pre-populated from the current {TARGET_LABELS.get(source_target, source_target)} draft."
+        else:
+            existing_variant = build_studio_variant(title="", raw_input="", markdown="", preview_html="", assumptions="")
+            variants[target] = existing_variant
+
+    existing_variant = ensure_variant_preview(target, existing_variant or {})
+    variants[target] = existing_variant
+    payload = variant_payload(target, existing_variant or build_studio_variant(title="", raw_input="", markdown="", preview_html="", assumptions=""), variants, notice=notice)
+    studio_queue_update(payload, page="Studio")
+
+
+def studio_variants_for_save() -> dict[str, dict[str, str]]:
+    variants = dict(st.session_state.get("studio_variants", {}))
+    current_target = st.session_state.get("studio_target", "confluence_page")
+    variants[current_target] = current_studio_variant()
+    return variants
 
 
 def home_page() -> None:
@@ -960,6 +1162,8 @@ def studio_page() -> None:
     st.session_state.setdefault("studio_jira_issue_type", "Task")
     st.session_state.setdefault("studio_jira_issue_type_selector", "Task")
     st.session_state.setdefault("studio_jira_labels", "")
+    st.session_state.setdefault("studio_variants", {})
+    st.session_state.setdefault("studio_conversion_notice", "")
     st.session_state.setdefault("studio_publish_result", None)
 
     latest_ask = st.session_state.get("ask_result")
@@ -967,6 +1171,9 @@ def studio_page() -> None:
     spaces = fetch_confluence_spaces(limit=50)
     recent_pages = fetch_confluence_pages(limit=25)
     jira_projects = fetch_jira_projects(limit=100)
+
+    if st.session_state.get("studio_conversion_notice"):
+        st.info(st.session_state["studio_conversion_notice"])
 
     target_choice = st.radio(
         "Artifact",
@@ -977,7 +1184,8 @@ def studio_page() -> None:
     )
     target_value = TARGET_OPTIONS[target_choice]
     if target_value != st.session_state.get("studio_target"):
-        studio_queue_update({"studio_target": target_value, "studio_target_picker": target_choice, "studio_publish_result": None}, page="Studio")
+        switch_studio_target(target_value)
+        st.stop()
 
     workspace_cols = st.columns([0.34, 0.38, 0.28], gap="large")
 
@@ -1022,6 +1230,8 @@ def studio_page() -> None:
                         "studio_jira_issue_type": "Task",
                         "studio_jira_issue_type_selector": "Task",
                         "studio_jira_labels": "",
+                        "studio_variants": {},
+                        "studio_conversion_notice": "",
                         "studio_publish_result": None,
                     },
                     page="Studio",
@@ -1051,12 +1261,22 @@ def studio_page() -> None:
                     if error:
                         st.error(error)
                     else:
+                        variants = studio_variants_for_save()
+                        variants[st.session_state["studio_target"]] = build_studio_variant(
+                            title=data.get("title", title),
+                            raw_input=raw_input,
+                            markdown=data.get("structured_markdown", ""),
+                            preview_html=data.get("preview_html", ""),
+                            assumptions=data.get("assumptions", ""),
+                        )
                         studio_queue_update(
                             {
                                 "studio_title": data.get("title", title),
                                 "studio_markdown": data.get("structured_markdown", ""),
                                 "studio_preview_html": data.get("preview_html", ""),
                                 "studio_assumptions": data.get("assumptions", ""),
+                                "studio_variants": variants,
+                                "studio_conversion_notice": "",
                             },
                             page="Studio",
                         )
@@ -1072,11 +1292,20 @@ def studio_page() -> None:
                     if error:
                         st.error(error)
                     else:
-                        studio_queue_update({"studio_preview_html": data.get("preview_html", "")}, page="Studio")
+                        variants = studio_variants_for_save()
+                        variants[st.session_state["studio_target"]] = build_studio_variant(
+                            title=title,
+                            raw_input=raw_input,
+                            markdown=markdown_body,
+                            preview_html=data.get("preview_html", ""),
+                            assumptions=st.session_state.get("studio_assumptions", ""),
+                        )
+                        studio_queue_update({"studio_preview_html": data.get("preview_html", ""), "studio_variants": variants, "studio_conversion_notice": ""}, page="Studio")
                 else:
                     st.warning("Add raw input or a formatted draft before previewing.")
 
             if save_clicked:
+                variants = studio_variants_for_save()
                 data, error = api_post(
                     "/api/studio/drafts",
                     {
@@ -1094,6 +1323,7 @@ def studio_page() -> None:
                             "project_key": st.session_state.get("studio_jira_project", ""),
                             "issue_type": st.session_state.get("studio_jira_issue_type", "Task"),
                             "labels": parse_label_csv(st.session_state.get("studio_jira_labels", "")),
+                            "variants": variants,
                         },
                     },
                 )
@@ -1104,6 +1334,8 @@ def studio_page() -> None:
                         {
                             "studio_draft_id": data.get("draft_id", ""),
                             "studio_preview_html": data.get("preview_html", st.session_state.get("studio_preview_html", "")),
+                            "studio_variants": variants,
+                            "studio_conversion_notice": "",
                         },
                         page="Studio",
                     )

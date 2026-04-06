@@ -147,6 +147,8 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 - Uses local Gemma to structure the input into a Confluence page, Jira ticket, or PRD draft.
 - Uses a three-column workbench layout: input on the left, live preview in the center, and publish target controls on the right.
 - Auto-discovers Confluence spaces, recent parent pages, Jira projects, and Jira issue types from the connected Atlassian site.
+- When Ask sends a result into Studio, VeriAgent seeds a Confluence-style draft first, then auto-converts that same content into Jira or PRD format the first time you switch targets.
+- Keeps separate per-target variants in memory so your Jira, PRD, and Confluence edits do not overwrite each other while you switch between them.
 - Renders a styled preview before publishing.
 - Stores shared drafts in a bottom draft inbox rail and remembers the selected publish target when drafts are re-opened.
 - Publishes to Confluence or Jira from the same review surface.
