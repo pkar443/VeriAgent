@@ -137,6 +137,7 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 - Lets you choose a fast, balanced, or deep grounding mode.
 - Optionally generates Selenium starter code.
 - Runs long Ollama answers as backend jobs so they can continue even if you switch pages in the dashboard.
+- Auto-refreshes the answer panel while the backend job is still running.
 - Shows the matched Confluence pages beside the answer.
 - Lets you send the answer directly into Studio as a draft.
 
@@ -144,8 +145,10 @@ If you only provide `https://your-domain.atlassian.net`, VeriAgent normalizes it
 
 - Accepts rough raw text, pasted notes, or Codex handoff drafts.
 - Uses local Gemma to structure the input into a Confluence page, Jira ticket, or PRD draft.
+- Uses a three-column workbench layout: input on the left, live preview in the center, and publish target controls on the right.
+- Auto-discovers Confluence spaces, recent parent pages, Jira projects, and Jira issue types from the connected Atlassian site.
 - Renders a styled preview before publishing.
-- Stores shared drafts in a dashboard inbox.
+- Stores shared drafts in a bottom draft inbox rail and remembers the selected publish target when drafts are re-opened.
 - Publishes to Confluence or Jira from the same review surface.
 
 ### Setup

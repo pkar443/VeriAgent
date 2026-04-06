@@ -111,7 +111,7 @@ p, label, [data-testid="stMarkdownContainer"] {
   font-size: 2.5rem;
   font-weight: 800;
   line-height: 1.02;
-  max-width: 12ch;
+  max-width: 18ch;
   margin: 10px 0 12px 0;
 }
 
@@ -577,6 +577,40 @@ def fetch_recent_drafts(limit: int = 12) -> list[dict[str, Any]]:
     return data or []
 
 
+def fetch_confluence_spaces(limit: int = 50) -> list[dict[str, Any]]:
+    data, error = api_get("/api/confluence/spaces", params={"limit": limit}, timeout=60)
+    if error:
+        st.warning(error)
+        return []
+    return data or []
+
+
+def fetch_confluence_pages(limit: int = 25, query: str = "") -> list[dict[str, Any]]:
+    data, error = api_get("/api/confluence/pages", params={"limit": limit, "query": query}, timeout=60)
+    if error:
+        st.warning(error)
+        return []
+    return data or []
+
+
+def fetch_jira_projects(limit: int = 100) -> list[dict[str, Any]]:
+    data, error = api_get("/api/jira/projects", params={"limit": limit}, timeout=60)
+    if error:
+        st.warning(error)
+        return []
+    return data or []
+
+
+def fetch_jira_issue_types(project_key: str) -> list[dict[str, Any]]:
+    if not project_key.strip():
+        return []
+    data, error = api_get(f"/api/jira/projects/{project_key}/issue-types", timeout=60)
+    if error:
+        st.warning(error)
+        return []
+    return data or []
+
+
 def get_page_preview(page_id: str) -> tuple[dict[str, Any] | None, str | None]:
     cache = st.session_state.setdefault("page_preview_cache", {})
     if page_id in cache:
@@ -609,209 +643,10 @@ def sync_active_ask_job() -> None:
         st.session_state["ask_job_id"] = None
 
 
-def seed_studio_from_ask(result: dict[str, Any]) -> None:
-    sections = result.get("sections", {})
-    lines = [f"# {result.get('query', 'VeriAgent Draft')}", ""]
-    if sections.get("answer"):
-        lines.extend(["## Answer", sections["answer"], ""])
-    if sections.get("assumptions"):
-        lines.extend(["## Assumptions", sections["assumptions"], ""])
-    if sections.get("test_scenarios"):
-        lines.extend(["## Test Scenarios", sections["test_scenarios"], ""])
-    if sections.get("steps"):
-        lines.extend(["## Steps", sections["steps"], ""])
-    if sections.get("expected_results"):
-        lines.extend(["## Expected Results", sections["expected_results"], ""])
-    if sections.get("selenium_code") and sections["selenium_code"] != "Not requested.":
-        lines.extend(["## Selenium Starter Code", "```python", sections["selenium_code"], "```", ""])
-    if result.get("sources"):
-        lines.append("## Sources")
-        for source in result["sources"]:
-            title = source.get("title", "Untitled")
-            url = source.get("url", "")
-            lines.append(f"- [{title}]({url})" if url else f"- {title}")
-        lines.append("")
-
-    studio_queue_update(
-        {
-            "studio_draft_id": "",
-            "studio_title": f"QA Draft - {result.get('query', 'VeriAgent')[:68].strip()}",
-            "studio_target": "confluence_page",
-            "studio_target_picker": "Confluence Page",
-            "studio_raw_input": sections.get("raw_output", "") or sections.get("answer", "") or result.get("query", ""),
-            "studio_markdown": "\n".join(lines).strip(),
-            "studio_preview_html": "",
-            "studio_assumptions": sections.get("assumptions", ""),
-            "studio_source": "dashboard-ask",
-            "studio_publish_result": None,
-        },
-        page="Studio",
-    )
-
-
-def load_draft_into_studio(draft: dict[str, Any]) -> None:
-    studio_queue_update(
-        {
-            "studio_draft_id": draft.get("draft_id", ""),
-            "studio_title": draft.get("title", ""),
-            "studio_target": draft.get("target", "confluence_page"),
-            "studio_target_picker": TARGET_LABELS.get(draft.get("target", "confluence_page"), "Confluence Page"),
-            "studio_raw_input": draft.get("raw_input", ""),
-            "studio_markdown": draft.get("structured_markdown", ""),
-            "studio_preview_html": draft.get("preview_html", ""),
-            "studio_assumptions": draft.get("metadata", {}).get("assumptions", ""),
-            "studio_source": draft.get("source", "dashboard"),
-            "studio_publish_result": None,
-        },
-        page="Studio",
-    )
-
-
-def parse_label_csv(raw_value: str) -> list[str]:
-    return [item.strip() for item in raw_value.split(",") if item.strip()]
-
-
-def home_page() -> None:
-    hero(
-        "A sharper QA hub for docs, drafts, and publish flows",
-        "VeriAgent v2 turns the dashboard into a real workbench: grounded Q&A, Gemma-shaped document drafts, Codex handoff, and direct publishing into Confluence or Jira.",
-        eyebrow="Overview",
-    )
-
-    health = current_health()
-    if health is None:
-        return
-
-    recent_drafts = fetch_recent_drafts(limit=6)
-    st.markdown(
-        f"""
-        <div class="metric-grid">
-          <div class="metric-card">
-            <div class="metric-label">Model</div>
-            <div class="metric-value">{html_lib.escape(str(health.get('ollama', {}).get('metadata', {}).get('model_name', 'gemma4:e2b')))}</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">Confluence</div>
-            <div class="metric-value">{'Connected' if health.get('confluence', {}).get('ok') else 'Needs setup'}</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">Active Drafts</div>
-            <div class="metric-value">{len(recent_drafts)}</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-label">MCP URL</div>
-            <div class="metric-value">{html_lib.escape(health.get('mcp', {}).get('url', ''))}</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    action_cols = st.columns(4)
-    with action_cols[0]:
-        if st.button("Open Ask", use_container_width=True):
-            navigate_to("Ask")
-    with action_cols[1]:
-        if st.button("Open Studio", use_container_width=True):
-            navigate_to("Studio")
-    with action_cols[2]:
-        if st.button("Setup Sources", use_container_width=True):
-            navigate_to("Setup")
-    with action_cols[3]:
-        if st.button("MCP Config", use_container_width=True):
-            navigate_to("Integration")
-
-    status_cols = st.columns(4)
-    for column, label, key in zip(status_cols, ["Backend", "Confluence", "Ollama", "MCP"], ["backend", "confluence", "ollama", "mcp"]):
-        with column:
-            render_status_card(label, health.get(key, {}))
-
-    left, right = st.columns([1.05, 0.95], gap="large")
-    with left:
-        section_intro("Recent Drafts", "Work waiting for review or publish", "Codex and the dashboard now share a single draft queue. Use the Studio to refine, preview, and publish.")
-        if not recent_drafts:
-            st.markdown('<div class="note-card">No drafts yet. Start in Studio or send a draft from Codex with <code>save_dashboard_draft</code>.</div>', unsafe_allow_html=True)
-        for draft in recent_drafts[:4]:
-            render_draft_card(draft)
-            if st.button("Open in Studio", key=f"open-home-draft-{draft['draft_id']}", use_container_width=True):
-                load_draft_into_studio(draft)
-
-    with right:
-        section_intro("How v2 flows", "One hub for AI drafting and human approval", "Use Ask for grounded answers, Studio for document shaping, and Integration for Codex handoff. Confluence and Jira publishing now sit behind the same approval surface.")
-        st.markdown(
-            """
-            <div class="note-card">
-              <strong>Dashboard path</strong><br>
-              Paste rough notes, click Preview, let Gemma turn them into a polished artifact, then edit and publish.<br><br>
-              <strong>Codex path</strong><br>
-              Let Codex draft from repo context, save the draft into VeriAgent, review it in Studio, then publish without re-copying content.
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        config = current_config()
-        if config:
-            st.caption(f"Workspace .env: {config.get('env_file_path', '.env')}")
-            st.caption(f"Token saved: {'Yes' if config.get('confluence_api_token_set') else 'No'}")
-
-
-def ask_page() -> None:
-    hero(
-        "Ground a question, then turn the answer into a draft",
-        "Ask stays focused on retrieval-backed QA. When the answer is useful, send it straight into Studio and turn it into a Confluence page, PRD, or Jira-ready artifact.",
-        eyebrow="Ask",
-    )
-
-    with st.container(border=True):
-        col_query, col_mode = st.columns([1.4, 0.6], gap="large")
-        with col_query:
-            query = st.text_area(
-                "Question",
-                value=st.session_state.get("ask_query", ""),
-                key="ask_query",
-                height=140,
-                placeholder="What do you want to verify?",
-            )
-        with col_mode:
-            grounding_label = st.radio("Grounding", list(GROUNDING_OPTIONS.keys()), horizontal=True, key="ask_grounding")
-            generate_selenium = st.toggle("Include Selenium starter code", value=st.session_state.get("ask_selenium", False), key="ask_selenium")
-            st.markdown('<div class="note-card">Balanced is best for most documentation questions. Deep is useful when the page is broad or noisy.</div>', unsafe_allow_html=True)
-
-        action_cols = st.columns([0.6, 0.2, 0.2])
-        run_ask = action_cols[0].button("Run grounded QA", type="primary", use_container_width=True)
-        refresh = action_cols[1].button("Refresh", use_container_width=True)
-        clear = action_cols[2].button("Clear", use_container_width=True)
-
-        if run_ask:
-            data, error = api_post(
-                "/api/qa/jobs",
-                {
-                    "query": query,
-                    "top_k": GROUNDING_OPTIONS[grounding_label],
-                    "generate_selenium": generate_selenium,
-                },
-            )
-            if error:
-                st.error(error)
-            else:
-                st.session_state["ask_job_id"] = data.get("job_id")
-                st.session_state["ask_job_state"] = data
-                st.session_state["ask_job_error"] = None
-                st.session_state.pop("ask_result", None)
-                st.success("Gemma job started in the backend.")
-
-        if refresh:
-            sync_active_ask_job()
-            st.rerun()
-
-        if clear:
-            for key in ["ask_job_id", "ask_job_state", "ask_job_error", "ask_result"]:
-                st.session_state.pop(key, None)
-            st.rerun()
-
+def render_ask_live_state() -> None:
     active_job = st.session_state.get("ask_job_state")
     if active_job and active_job.get("status") in {"queued", "running"}:
-        st.info(f"Background QA job is {active_job.get('status')}. You can switch pages and come back.")
+        st.info(f"Background QA job is {active_job.get('status')}. VeriAgent is polling automatically.")
     if st.session_state.get("ask_job_error"):
         st.warning(st.session_state["ask_job_error"])
 
@@ -882,8 +717,231 @@ def ask_page() -> None:
                         st.markdown(f"- {chunk.get('snippet') or chunk.get('content', '')[:180]}")
 
 
+@st.fragment(run_every=5)
+def ask_live_panel() -> None:
+    if st.session_state.get("ask_job_id"):
+        sync_active_ask_job()
+    render_ask_live_state()
+
+
+def seed_studio_from_ask(result: dict[str, Any]) -> None:
+    sections = result.get("sections", {})
+    lines = [f"# {result.get('query', 'VeriAgent Draft')}", ""]
+    if sections.get("answer"):
+        lines.extend(["## Answer", sections["answer"], ""])
+    if sections.get("assumptions"):
+        lines.extend(["## Assumptions", sections["assumptions"], ""])
+    if sections.get("test_scenarios"):
+        lines.extend(["## Test Scenarios", sections["test_scenarios"], ""])
+    if sections.get("steps"):
+        lines.extend(["## Steps", sections["steps"], ""])
+    if sections.get("expected_results"):
+        lines.extend(["## Expected Results", sections["expected_results"], ""])
+    if sections.get("selenium_code") and sections["selenium_code"] != "Not requested.":
+        lines.extend(["## Selenium Starter Code", "```python", sections["selenium_code"], "```", ""])
+    if result.get("sources"):
+        lines.append("## Sources")
+        for source in result["sources"]:
+            title = source.get("title", "Untitled")
+            url = source.get("url", "")
+            lines.append(f"- [{title}]({url})" if url else f"- {title}")
+        lines.append("")
+
+    studio_queue_update(
+        {
+            "studio_draft_id": "",
+            "studio_title": f"QA Draft - {result.get('query', 'VeriAgent')[:68].strip()}",
+            "studio_target": "confluence_page",
+            "studio_target_picker": "Confluence Page",
+            "studio_raw_input": sections.get("raw_output", "") or sections.get("answer", "") or result.get("query", ""),
+            "studio_markdown": "\n".join(lines).strip(),
+            "studio_preview_html": "",
+            "studio_assumptions": sections.get("assumptions", ""),
+            "studio_source": "dashboard-ask",
+            "studio_parent_page_id": "",
+            "studio_parent_page_selector": "",
+            "studio_jira_project": "",
+            "studio_jira_project_selector": "",
+            "studio_jira_issue_type": "Task",
+            "studio_jira_issue_type_selector": "Task",
+            "studio_jira_labels": "",
+            "studio_publish_result": None,
+        },
+        page="Studio",
+    )
+
+
+def load_draft_into_studio(draft: dict[str, Any]) -> None:
+    metadata = draft.get("metadata", {})
+    studio_queue_update(
+        {
+            "studio_draft_id": draft.get("draft_id", ""),
+            "studio_title": draft.get("title", ""),
+            "studio_target": draft.get("target", "confluence_page"),
+            "studio_target_picker": TARGET_LABELS.get(draft.get("target", "confluence_page"), "Confluence Page"),
+            "studio_raw_input": draft.get("raw_input", ""),
+            "studio_markdown": draft.get("structured_markdown", ""),
+            "studio_preview_html": draft.get("preview_html", ""),
+            "studio_assumptions": metadata.get("assumptions", ""),
+            "studio_source": draft.get("source", "dashboard"),
+            "studio_space": metadata.get("confluence_space", ""),
+            "studio_parent_page_id": metadata.get("parent_page_id", ""),
+            "studio_parent_page_selector": metadata.get("parent_page_id", ""),
+            "studio_jira_project": metadata.get("project_key", ""),
+            "studio_jira_project_selector": metadata.get("project_key", ""),
+            "studio_jira_issue_type": metadata.get("issue_type", "Task"),
+            "studio_jira_issue_type_selector": metadata.get("issue_type", "Task"),
+            "studio_jira_labels": ", ".join(metadata.get("labels", [])) if isinstance(metadata.get("labels"), list) else "",
+            "studio_publish_result": None,
+        },
+        page="Studio",
+    )
+
+
+def parse_label_csv(raw_value: str) -> list[str]:
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
+def home_page() -> None:
+    hero(
+        "QA workbench for docs, drafts, and publish",
+        "Use Overview as a launch pad: confirm the system is healthy, reopen recent drafts, and jump straight into Ask or Studio.",
+        eyebrow="Overview",
+    )
+
+    health = current_health()
+    if health is None:
+        return
+
+    recent_drafts = fetch_recent_drafts(limit=6)
+    st.markdown(
+        f"""
+        <div class="metric-grid">
+          <div class="metric-card">
+            <div class="metric-label">Model</div>
+            <div class="metric-value">{html_lib.escape(str(health.get('ollama', {}).get('metadata', {}).get('model_name', 'gemma4:e2b')))}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Confluence</div>
+            <div class="metric-value">{'Connected' if health.get('confluence', {}).get('ok') else 'Needs setup'}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">Active Drafts</div>
+            <div class="metric-value">{len(recent_drafts)}</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-label">MCP URL</div>
+            <div class="metric-value">{html_lib.escape(health.get('mcp', {}).get('url', ''))}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    action_cols = st.columns(4)
+    if action_cols[0].button("Ask question", use_container_width=True):
+        navigate_to("Ask")
+    if action_cols[1].button("Open Studio", use_container_width=True):
+        navigate_to("Studio")
+    if action_cols[2].button("Setup sources", use_container_width=True):
+        navigate_to("Setup")
+    if action_cols[3].button("Integration", use_container_width=True):
+        navigate_to("Integration")
+
+    left, right = st.columns([1.18, 0.82], gap="large")
+    with left:
+        section_intro("Recent Drafts", "Jump back into the latest work", "Open a draft directly in Studio without re-running Codex or re-pasting content.")
+        if not recent_drafts:
+            st.markdown('<div class="note-card">No drafts yet. Start in Studio, or let Codex hand one in with <code>save_dashboard_draft</code>.</div>', unsafe_allow_html=True)
+        else:
+            draft_cols = st.columns(min(4, len(recent_drafts[:4])))
+            for column, draft in zip(draft_cols, recent_drafts[:4]):
+                with column:
+                    render_draft_card(draft)
+                    if st.button("Open draft", key=f"open-home-draft-{draft['draft_id']}", use_container_width=True):
+                        load_draft_into_studio(draft)
+
+    with right:
+        section_intro("System", "Only the signals that matter", "A quick health snapshot for backend, Confluence, Ollama, and MCP.")
+        status_top = st.columns(2)
+        with status_top[0]:
+            render_status_card("Confluence", health.get("confluence", {}))
+        with status_top[1]:
+            render_status_card("Ollama", health.get("ollama", {}))
+        status_bottom = st.columns(2)
+        with status_bottom[0]:
+            render_status_card("Backend", health.get("backend", {}))
+        with status_bottom[1]:
+            render_status_card("MCP", health.get("mcp", {}))
+
+        config = current_config()
+        if config:
+            st.markdown(
+                f"""
+                <div class="note-card">
+                  <strong>Current runtime</strong><br>
+                  Model: {html_lib.escape(str(health.get('ollama', {}).get('metadata', {}).get('model_name', 'gemma4:e2b')))}<br>
+                  Token saved: {'Yes' if config.get('confluence_api_token_set') else 'No'}<br>
+                  Env file: {html_lib.escape(config.get('env_file_path', '.env'))}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def ask_page() -> None:
+    hero(
+        "Ground a question, then turn the answer into a draft",
+        "Ask stays focused on retrieval-backed QA. When the answer is useful, send it straight into Studio and turn it into a Confluence page, PRD, or Jira-ready artifact.",
+        eyebrow="Ask",
+    )
+
+    with st.container(border=True):
+        col_query, col_mode = st.columns([1.4, 0.6], gap="large")
+        with col_query:
+            query = st.text_area(
+                "Question",
+                value=st.session_state.get("ask_query", ""),
+                key="ask_query",
+                height=140,
+                placeholder="What do you want to verify?",
+            )
+        with col_mode:
+            grounding_label = st.radio("Grounding", list(GROUNDING_OPTIONS.keys()), horizontal=True, key="ask_grounding")
+            generate_selenium = st.toggle("Include Selenium starter code", value=st.session_state.get("ask_selenium", False), key="ask_selenium")
+            st.markdown('<div class="note-card">Balanced is best for most documentation questions. Deep is useful when the page is broad or noisy.</div>', unsafe_allow_html=True)
+
+        action_cols = st.columns([0.7, 0.3])
+        run_ask = action_cols[0].button("Run grounded QA", type="primary", use_container_width=True)
+        clear = action_cols[1].button("Clear", use_container_width=True)
+
+        if run_ask:
+            data, error = api_post(
+                "/api/qa/jobs",
+                {
+                    "query": query,
+                    "top_k": GROUNDING_OPTIONS[grounding_label],
+                    "generate_selenium": generate_selenium,
+                },
+            )
+            if error:
+                st.error(error)
+            else:
+                st.session_state["ask_job_id"] = data.get("job_id")
+                st.session_state["ask_job_state"] = data
+                st.session_state["ask_job_error"] = None
+                st.session_state.pop("ask_result", None)
+                st.success("Gemma job started. The answer will refresh automatically while it runs.")
+
+        if clear:
+            for key in ["ask_job_id", "ask_job_state", "ask_job_error", "ask_result"]:
+                st.session_state.pop(key, None)
+            st.rerun()
+    ask_live_panel()
+
+
 def studio_page() -> None:
-    section_intro("Studio", "Shape raw notes into polished publishable artifacts", "Preview drives the formatting flow: paste rough text or open a Codex draft, let Gemma structure it, then refine and publish.")
+    section_intro("Studio", "Turn rough content into a polished artifact", "Write or paste raw input on the left, inspect the formatted preview in the center, and choose the publish target on the right.")
 
     st.session_state.setdefault("studio_draft_id", "")
     st.session_state.setdefault("studio_title", "")
@@ -896,215 +954,323 @@ def studio_page() -> None:
     st.session_state.setdefault("studio_source", "dashboard")
     st.session_state.setdefault("studio_space", "")
     st.session_state.setdefault("studio_parent_page_id", "")
+    st.session_state.setdefault("studio_parent_page_selector", "")
     st.session_state.setdefault("studio_jira_project", "")
+    st.session_state.setdefault("studio_jira_project_selector", "")
     st.session_state.setdefault("studio_jira_issue_type", "Task")
+    st.session_state.setdefault("studio_jira_issue_type_selector", "Task")
     st.session_state.setdefault("studio_jira_labels", "")
     st.session_state.setdefault("studio_publish_result", None)
 
-    left, right = st.columns([0.34, 0.66], gap="large")
+    latest_ask = st.session_state.get("ask_result")
+    recent_drafts = fetch_recent_drafts(limit=15)
+    spaces = fetch_confluence_spaces(limit=50)
+    recent_pages = fetch_confluence_pages(limit=25)
+    jira_projects = fetch_jira_projects(limit=100)
 
-    with left:
+    target_choice = st.radio(
+        "Artifact",
+        list(TARGET_OPTIONS.keys()),
+        horizontal=True,
+        index=list(TARGET_OPTIONS.values()).index(st.session_state.get("studio_target", "confluence_page")),
+        key="studio_target_picker",
+    )
+    target_value = TARGET_OPTIONS[target_choice]
+    if target_value != st.session_state.get("studio_target"):
+        studio_queue_update({"studio_target": target_value, "studio_target_picker": target_choice, "studio_publish_result": None}, page="Studio")
+
+    workspace_cols = st.columns([0.34, 0.38, 0.28], gap="large")
+
+    with workspace_cols[0]:
         with st.container(border=True):
-            st.markdown('<div class="inline-heading">Draft Inbox</div>', unsafe_allow_html=True)
-            inbox_cols = st.columns([0.7, 0.3])
-            with inbox_cols[0]:
-                st.caption("Saved by Codex or the dashboard")
-            refresh_drafts = inbox_cols[1].button("Refresh", use_container_width=True, key="studio-refresh-drafts")
+            st.markdown('<div class="inline-heading">Draft Input</div>', unsafe_allow_html=True)
+            title = st.text_input("Title", key="studio_title")
+            raw_input = st.text_area(
+                "Raw input",
+                key="studio_raw_input",
+                height=240,
+                placeholder="Paste rough notes, meeting output, copied content, or Codex-written draft material here.",
+            )
+            markdown_body = st.text_area(
+                "Formatted draft",
+                key="studio_markdown",
+                height=260,
+                placeholder="Gemma will structure the content here after you preview or refine it.",
+            )
 
-            drafts = fetch_recent_drafts(limit=12)
-            if refresh_drafts:
-                drafts = fetch_recent_drafts(limit=12)
+            tool_cols = st.columns(4)
+            preview_clicked = tool_cols[0].button("Preview", type="primary", use_container_width=True)
+            refine_clicked = tool_cols[1].button("Refine", use_container_width=True)
+            save_clicked = tool_cols[2].button("Save", use_container_width=True)
+            reset_clicked = tool_cols[3].button("Reset", use_container_width=True)
 
-            if not drafts:
-                st.markdown('<div class="note-card">No drafts yet. Use the editor on the right, or from Codex call <code>save_dashboard_draft</code>.</div>', unsafe_allow_html=True)
-
-            for draft in drafts[:8]:
-                render_draft_card(draft)
-                if st.button("Open draft", key=f"studio-open-{draft['draft_id']}", use_container_width=True):
-                    load_draft_into_studio(draft)
-
-        latest_ask = st.session_state.get("ask_result")
-        with st.container(border=True):
-            st.markdown('<div class="inline-heading">Quick Intake</div>', unsafe_allow_html=True)
-            st.markdown('<div class="note-card">Use the latest grounded answer, paste rough notes, or open a Codex draft. Studio keeps the human in the loop before anything is published.</div>', unsafe_allow_html=True)
-            if latest_ask and st.button("Use latest Ask result", use_container_width=True, key="studio-use-ask"):
-                seed_studio_from_ask(latest_ask)
-            if st.button("Start fresh draft", use_container_width=True, key="studio-start-fresh"):
+            if reset_clicked:
                 studio_queue_update(
                     {
                         "studio_draft_id": "",
                         "studio_title": "",
-                        "studio_target": "confluence_page",
-                        "studio_target_picker": "Confluence Page",
                         "studio_raw_input": "",
                         "studio_markdown": "",
                         "studio_preview_html": "",
                         "studio_assumptions": "",
                         "studio_source": "dashboard",
+                        "studio_space": "",
+                        "studio_parent_page_id": "",
+                        "studio_parent_page_selector": "",
+                        "studio_jira_project": "",
+                        "studio_jira_project_selector": "",
+                        "studio_jira_issue_type": "Task",
+                        "studio_jira_issue_type_selector": "Task",
+                        "studio_jira_labels": "",
                         "studio_publish_result": None,
                     },
                     page="Studio",
                 )
 
-    with right:
-        hero(
-            "Draft, preview, refine, publish",
-            "The Studio is built for rough notes first. Preview uses Gemma to structure raw text into a proper artifact, then shows the styled output you are about to publish.",
-            eyebrow="Document Studio",
-        )
-        target_choice = st.radio(
-            "Artifact",
-            list(TARGET_OPTIONS.keys()),
-            horizontal=True,
-            index=list(TARGET_OPTIONS.values()).index(st.session_state.get("studio_target", "confluence_page")),
-            key="studio_target_picker",
-        )
-        target_value = TARGET_OPTIONS[target_choice]
-        if target_value != st.session_state.get("studio_target"):
-            studio_queue_update({"studio_target": target_value, "studio_target_picker": target_choice}, page="Studio")
-
-        editor_cols = st.columns([0.56, 0.44], gap="large")
-        with editor_cols[0]:
-            with st.container(border=True):
-                title = st.text_input("Title", key="studio_title")
-                raw_input = st.text_area(
-                    "Raw input",
-                    key="studio_raw_input",
-                    height=220,
-                    placeholder="Paste rough notes, ticket details, repo summaries, or copied content here.",
-                )
-                markdown_body = st.text_area(
-                    "Formatted draft",
-                    key="studio_markdown",
-                    height=280,
-                    placeholder="Gemma will place the structured Markdown here.",
-                )
-
-                tool_cols = st.columns(4)
-                preview_clicked = tool_cols[0].button("Preview", type="primary", use_container_width=True)
-                save_clicked = tool_cols[1].button("Save draft", use_container_width=True)
-                beautify_clicked = tool_cols[2].button("Refine", use_container_width=True)
-                copy_clicked = tool_cols[3].button("Copy draft", use_container_width=True)
-
-                if copy_clicked and markdown_body.strip():
+            quick_cols = st.columns(2)
+            if quick_cols[0].button("Use latest Ask result", use_container_width=True, disabled=not bool(latest_ask)):
+                if latest_ask:
+                    seed_studio_from_ask(latest_ask)
+            if quick_cols[1].button("Copy formatted draft", use_container_width=True, disabled=not bool(markdown_body.strip())):
+                if markdown_body.strip():
                     render_copy_button(markdown_body, "Copy formatted draft", "studio-markdown")
 
-                if preview_clicked or beautify_clicked:
-                    if raw_input.strip():
-                        data, error = api_post(
-                            "/api/studio/transform",
-                            {
-                                "target": st.session_state["studio_target"],
-                                "raw_input": raw_input,
-                                "title": title,
-                                "existing_markdown": markdown_body if beautify_clicked else "",
-                                "context_notes": f"Draft source: {st.session_state.get('studio_source', 'dashboard')}",
-                            },
-                            timeout=300,
-                        )
-                        if error:
-                            st.error(error)
-                        else:
-                            studio_queue_update(
-                                {
-                                    "studio_title": data.get("title", title),
-                                    "studio_markdown": data.get("structured_markdown", ""),
-                                    "studio_preview_html": data.get("preview_html", ""),
-                                    "studio_assumptions": data.get("assumptions", ""),
-                                },
-                                page="Studio",
-                            )
-                    elif markdown_body.strip():
-                        data, error = api_post(
-                            "/api/studio/preview",
-                            {
-                                "target": st.session_state["studio_target"],
-                                "title": title,
-                                "structured_markdown": markdown_body,
-                            },
-                        )
-                        if error:
-                            st.error(error)
-                        else:
-                            studio_queue_update({"studio_preview_html": data.get("preview_html", "")}, page="Studio")
-                    else:
-                        st.warning("Add raw input or a formatted draft before previewing.")
-
-                if save_clicked:
+            if preview_clicked or refine_clicked:
+                if raw_input.strip():
                     data, error = api_post(
-                        "/api/studio/drafts",
+                        "/api/studio/transform",
                         {
-                            "draft_id": st.session_state.get("studio_draft_id") or None,
-                            "title": title,
                             "target": st.session_state["studio_target"],
                             "raw_input": raw_input,
-                            "structured_markdown": markdown_body,
-                            "preview_html": st.session_state.get("studio_preview_html", ""),
-                            "source": st.session_state.get("studio_source", "dashboard"),
-                            "metadata": {"assumptions": st.session_state.get("studio_assumptions", "")},
+                            "title": title,
+                            "existing_markdown": markdown_body if refine_clicked else "",
+                            "context_notes": f"Draft source: {st.session_state.get('studio_source', 'dashboard')}",
                         },
+                        timeout=300,
                     )
                     if error:
                         st.error(error)
                     else:
                         studio_queue_update(
                             {
-                                "studio_draft_id": data.get("draft_id", ""),
-                                "studio_preview_html": data.get("preview_html", st.session_state.get("studio_preview_html", "")),
+                                "studio_title": data.get("title", title),
+                                "studio_markdown": data.get("structured_markdown", ""),
+                                "studio_preview_html": data.get("preview_html", ""),
+                                "studio_assumptions": data.get("assumptions", ""),
                             },
                             page="Studio",
                         )
-
-                if st.session_state.get("studio_assumptions"):
-                    st.markdown("**Assumptions**")
-                    st.write(st.session_state["studio_assumptions"])
-                st.caption(f"Draft source: {st.session_state.get('studio_source', 'dashboard')}")
-
-        with editor_cols[1]:
-            with st.container(border=True):
-                st.markdown('<div class="inline-heading">Publish target</div>', unsafe_allow_html=True)
-                st.text_input("Draft title snapshot", value=st.session_state.get("studio_title", ""), disabled=True)
-                if st.session_state["studio_target"] in {"confluence_page", "prd"}:
-                    st.text_input("Confluence space", key="studio_space", placeholder="SD")
-                    st.text_input("Parent page ID", key="studio_parent_page_id", placeholder="Optional")
-                    publish_caption = "Publishes to Confluence as a new page."
-                else:
-                    st.text_input("Jira project key", key="studio_jira_project", placeholder="SD")
-                    st.selectbox("Issue type", ["Task", "Story", "Bug", "Epic"], key="studio_jira_issue_type")
-                    st.text_input("Labels", key="studio_jira_labels", placeholder="qa, veriagent")
-                    publish_caption = "Publishes to Jira as a new issue."
-                st.caption(publish_caption)
-                publish_clicked = st.button("Publish now", use_container_width=True)
-
-                if publish_clicked:
-                    payload = {
-                        "draft_id": st.session_state.get("studio_draft_id") or None,
-                        "target": st.session_state["studio_target"],
-                        "title": st.session_state.get("studio_title", ""),
-                        "structured_markdown": st.session_state.get("studio_markdown", ""),
-                        "confluence_space": st.session_state.get("studio_space", ""),
-                        "parent_page_id": st.session_state.get("studio_parent_page_id") or None,
-                        "jira_project_key": st.session_state.get("studio_jira_project", ""),
-                        "jira_issue_type": st.session_state.get("studio_jira_issue_type", "Task"),
-                        "jira_labels": parse_label_csv(st.session_state.get("studio_jira_labels", "")),
-                    }
-                    data, error = api_post("/api/studio/publish", payload, timeout=120)
+                elif markdown_body.strip():
+                    data, error = api_post(
+                        "/api/studio/preview",
+                        {
+                            "target": st.session_state["studio_target"],
+                            "title": title,
+                            "structured_markdown": markdown_body,
+                        },
+                    )
                     if error:
                         st.error(error)
                     else:
-                        st.session_state["studio_publish_result"] = data
-                        st.success(f"Published to {data.get('platform', 'destination')}.")
+                        studio_queue_update({"studio_preview_html": data.get("preview_html", "")}, page="Studio")
+                else:
+                    st.warning("Add raw input or a formatted draft before previewing.")
 
-                result = st.session_state.get("studio_publish_result")
-                if result:
-                    st.metric("Published ID", result.get("external_id", ""))
-                    st.metric("Platform", result.get("platform", ""))
-                    if result.get("url"):
-                        st.link_button("Open published item", result["url"], use_container_width=True)
+            if save_clicked:
+                data, error = api_post(
+                    "/api/studio/drafts",
+                    {
+                        "draft_id": st.session_state.get("studio_draft_id") or None,
+                        "title": title,
+                        "target": st.session_state["studio_target"],
+                        "raw_input": raw_input,
+                        "structured_markdown": markdown_body,
+                        "preview_html": st.session_state.get("studio_preview_html", ""),
+                        "source": st.session_state.get("studio_source", "dashboard"),
+                        "metadata": {
+                            "assumptions": st.session_state.get("studio_assumptions", ""),
+                            "confluence_space": st.session_state.get("studio_space", ""),
+                            "parent_page_id": st.session_state.get("studio_parent_page_id", ""),
+                            "project_key": st.session_state.get("studio_jira_project", ""),
+                            "issue_type": st.session_state.get("studio_jira_issue_type", "Task"),
+                            "labels": parse_label_csv(st.session_state.get("studio_jira_labels", "")),
+                        },
+                    },
+                )
+                if error:
+                    st.error(error)
+                else:
+                    studio_queue_update(
+                        {
+                            "studio_draft_id": data.get("draft_id", ""),
+                            "studio_preview_html": data.get("preview_html", st.session_state.get("studio_preview_html", "")),
+                        },
+                        page="Studio",
+                    )
 
-            with st.container(border=True):
-                st.markdown('<div class="inline-heading">Preview</div>', unsafe_allow_html=True)
-                render_preview(st.session_state.get("studio_preview_html", ""))
+            if st.session_state.get("studio_assumptions"):
+                st.markdown("**Assumptions**")
+                st.write(st.session_state["studio_assumptions"])
+            st.caption(f"Draft source: {st.session_state.get('studio_source', 'dashboard')}")
+
+    with workspace_cols[1]:
+        with st.container(border=True):
+            st.markdown('<div class="inline-heading">Preview</div>', unsafe_allow_html=True)
+            render_preview(st.session_state.get("studio_preview_html", ""))
+
+    with workspace_cols[2]:
+        with st.container(border=True):
+            st.markdown('<div class="inline-heading">Publish Target</div>', unsafe_allow_html=True)
+            st.caption("VeriAgent now uses connected Jira projects and Confluence pages so you do not have to type IDs by hand.")
+
+            if st.session_state["studio_target"] in {"confluence_page", "prd"}:
+                space_options = {space["key"]: f"{space['key']} - {space['name']}" for space in spaces if space.get("key")}
+                if not space_options and recent_pages:
+                    for page in recent_pages:
+                        key = (page.get("metadata") or {}).get("space_key")
+                        if key and key not in space_options:
+                            space_options[key] = key
+
+                if space_options:
+                    current_space = st.session_state.get("studio_space") or next(iter(space_options.keys()))
+                    if current_space not in space_options:
+                        space_options[current_space] = current_space
+                    selected_space = st.selectbox(
+                        "Confluence space",
+                        list(space_options.keys()),
+                        index=list(space_options.keys()).index(current_space),
+                        format_func=lambda value: space_options[value],
+                    )
+                    st.session_state["studio_space"] = selected_space
+                else:
+                    st.text_input("Confluence space", key="studio_space", placeholder="SD")
+
+                page_lookup = {
+                    page["page_id"]: page
+                    for page in recent_pages
+                    if not st.session_state.get("studio_space")
+                    or (page.get("metadata") or {}).get("space_key") == st.session_state.get("studio_space")
+                }
+                parent_options = [""] + list(page_lookup.keys())
+                current_parent = st.session_state.get("studio_parent_page_id") or ""
+                if current_parent not in parent_options:
+                    parent_options.append(current_parent)
+                selector_parent = st.session_state.get("studio_parent_page_selector") or current_parent
+                if selector_parent not in parent_options:
+                    selector_parent = current_parent
+                    st.session_state["studio_parent_page_selector"] = selector_parent
+                selected_parent = st.selectbox(
+                    "Parent page",
+                    parent_options,
+                    index=parent_options.index(selector_parent),
+                    format_func=lambda value: "No parent page" if not value else page_lookup.get(value, {}).get("title", value),
+                    key="studio_parent_page_selector",
+                )
+                st.session_state["studio_parent_page_id"] = selected_parent or ""
+                if selected_parent and selected_parent in page_lookup:
+                    selected_page = page_lookup[selected_parent]
+                    selected_space_key = (selected_page.get("metadata") or {}).get("space_key")
+                    if selected_space_key:
+                        st.session_state["studio_space"] = selected_space_key
+                    st.caption(f"Selected parent page: {selected_page.get('title', selected_parent)}")
+                st.caption("PRDs publish to Confluence too, so they use the same space and parent selection.")
+
+            else:
+                project_lookup = {project["key"]: project for project in jira_projects if project.get("key")}
+                if project_lookup:
+                    current_project = st.session_state.get("studio_jira_project") or next(iter(project_lookup.keys()))
+                    if current_project not in project_lookup:
+                        project_lookup[current_project] = {
+                            "key": current_project,
+                            "name": current_project,
+                            "project_type": "",
+                        }
+                    selector_project = st.session_state.get("studio_jira_project_selector") or current_project
+                    if selector_project not in project_lookup:
+                        selector_project = current_project
+                        st.session_state["studio_jira_project_selector"] = selector_project
+                    selected_project = st.selectbox(
+                        "Jira project",
+                        list(project_lookup.keys()),
+                        index=list(project_lookup.keys()).index(selector_project),
+                        format_func=lambda value: f"{value} - {project_lookup[value].get('name', value)}",
+                        key="studio_jira_project_selector",
+                    )
+                    st.session_state["studio_jira_project"] = selected_project
+                    selected_project_record = project_lookup[selected_project]
+                    if selected_project_record.get("project_type"):
+                        st.caption(f"Project type: {selected_project_record['project_type']}")
+                else:
+                    st.text_input("Jira project key", key="studio_jira_project", placeholder="SD")
+                    st.caption("Jira projects could not be listed automatically, so manual entry is still available.")
+
+                issue_types = fetch_jira_issue_types(st.session_state.get("studio_jira_project", ""))
+                issue_type_lookup = {item["name"]: item for item in issue_types if item.get("name")}
+                if issue_type_lookup:
+                    current_issue_type = st.session_state.get("studio_jira_issue_type") or next(iter(issue_type_lookup.keys()))
+                    if current_issue_type not in issue_type_lookup:
+                        current_issue_type = next(iter(issue_type_lookup.keys()))
+                        st.session_state["studio_jira_issue_type"] = current_issue_type
+                    selector_issue_type = st.session_state.get("studio_jira_issue_type_selector") or current_issue_type
+                    if selector_issue_type not in issue_type_lookup:
+                        selector_issue_type = current_issue_type
+                        st.session_state["studio_jira_issue_type_selector"] = selector_issue_type
+                    selected_issue_type = st.selectbox(
+                        "Issue type",
+                        list(issue_type_lookup.keys()),
+                        index=list(issue_type_lookup.keys()).index(selector_issue_type),
+                        key="studio_jira_issue_type_selector",
+                    )
+                    st.session_state["studio_jira_issue_type"] = selected_issue_type
+                    description = issue_type_lookup[selected_issue_type].get("description", "").strip()
+                    if description:
+                        st.caption(description)
+                else:
+                    st.selectbox("Issue type", ["Task", "Story", "Bug", "Epic"], key="studio_jira_issue_type")
+                st.text_input("Labels", key="studio_jira_labels", placeholder="qa, veriagent")
+
+            publish_label = "Create Jira ticket" if st.session_state["studio_target"] == "jira_ticket" else "Publish to Confluence"
+            publish_clicked = st.button(publish_label, use_container_width=True, type="primary")
+
+            if publish_clicked:
+                payload = {
+                    "draft_id": st.session_state.get("studio_draft_id") or None,
+                    "target": st.session_state["studio_target"],
+                    "title": st.session_state.get("studio_title", ""),
+                    "structured_markdown": st.session_state.get("studio_markdown", ""),
+                    "confluence_space": st.session_state.get("studio_space", ""),
+                    "parent_page_id": st.session_state.get("studio_parent_page_id") or None,
+                    "jira_project_key": st.session_state.get("studio_jira_project", ""),
+                    "jira_issue_type": st.session_state.get("studio_jira_issue_type", "Task"),
+                    "jira_labels": parse_label_csv(st.session_state.get("studio_jira_labels", "")),
+                }
+                data, error = api_post("/api/studio/publish", payload, timeout=120)
+                if error:
+                    st.error(error)
+                else:
+                    st.session_state["studio_publish_result"] = data
+                    st.success(f"Published to {data.get('platform', 'destination')}.")
+
+            result = st.session_state.get("studio_publish_result")
+            if result:
+                st.metric("Published ID", result.get("external_id", ""))
+                st.metric("Platform", result.get("platform", ""))
+                if result.get("url"):
+                    st.link_button("Open published item", result["url"], use_container_width=True)
+
+    st.markdown("---")
+    section_intro("Draft Inbox", "Recent drafts from Codex and the dashboard", "Use the rail below to reopen saved drafts without disturbing the current one.")
+    if not recent_drafts:
+        st.markdown('<div class="note-card">No drafts yet. Once Codex saves a draft or you save one from Studio, it will appear here.</div>', unsafe_allow_html=True)
+        return
+
+    visible_drafts = recent_drafts[:5]
+    draft_cols = st.columns(len(visible_drafts))
+    for column, draft in zip(draft_cols, visible_drafts):
+        with column:
+            render_draft_card(draft)
+            if st.button("Open", key=f"studio-bottom-open-{draft['draft_id']}", use_container_width=True):
+                load_draft_into_studio(draft)
 
 
 def setup_page() -> None:

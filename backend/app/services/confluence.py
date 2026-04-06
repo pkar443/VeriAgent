@@ -11,7 +11,7 @@ import httpx
 
 from backend.app.core.config import AppSettings
 from backend.app.core.exceptions import ConfigurationError, ExternalServiceError, NotFoundError, ValidationError
-from backend.app.models.schemas import CreatePageResponse, PageRecord, RuntimeConfig, SourceRecord, TestResult
+from backend.app.models.schemas import CreatePageResponse, PageRecord, RuntimeConfig, SourceRecord, SpaceRecord, TestResult
 from backend.app.utils.html import clean_html_content, markdown_to_storage_html
 from backend.app.utils.text import build_snippet
 
@@ -168,6 +168,20 @@ class ConfluenceClient:
                         "space_key": (item.get("space") or {}).get("key"),
                         "last_updated": (item.get("version") or {}).get("when"),
                     },
+                )
+            )
+        return results
+
+    def list_spaces(self, limit: int = 50) -> list[SpaceRecord]:
+        data = self._request("/space", params={"limit": limit})
+        results = []
+        for item in data.get("results", []):
+            results.append(
+                SpaceRecord(
+                    space_id=str(item.get("id") or ""),
+                    key=str(item.get("key") or ""),
+                    name=str(item.get("name") or item.get("key") or "Untitled space"),
+                    type=str(item.get("type") or ""),
                 )
             )
         return results

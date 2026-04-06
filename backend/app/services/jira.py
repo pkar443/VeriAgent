@@ -7,7 +7,7 @@ import httpx
 
 from backend.app.core.config import AppSettings
 from backend.app.core.exceptions import ConfigurationError, ExternalServiceError, ValidationError
-from backend.app.models.schemas import CreateJiraIssueResponse, RuntimeConfig
+from backend.app.models.schemas import CreateJiraIssueResponse, IssueTypeRecord, ProjectRecord, RuntimeConfig
 from backend.app.utils.adf import markdown_to_adf
 from backend.app.services.confluence import normalize_confluence_base_url
 
@@ -64,11 +64,65 @@ class JiraClient:
             status="created",
         )
 
+    def list_projects(self, limit: int = 100) -> list[ProjectRecord]:
+        data = self._request(
+            "/rest/api/3/project/search",
+            method="GET",
+            params={"maxResults": limit, "orderBy": "key"},
+            action="list Jira projects",
+        )
+        results = []
+        for item in data.get("values", []):
+            results.append(
+                ProjectRecord(
+                    project_id=str(item.get("id") or ""),
+                    key=str(item.get("key") or ""),
+                    name=str(item.get("name") or item.get("key") or "Untitled project"),
+                    project_type=str(item.get("projectTypeKey") or ""),
+                )
+            )
+        return results
+
+    def list_issue_types(self, project_key: str) -> list[IssueTypeRecord]:
+        clean_project = project_key.strip()
+        if not clean_project:
+            raise ValidationError("A Jira project key is required.")
+
+        data = self._request(
+            f"/rest/api/3/issue/createmeta/{clean_project}/issuetypes",
+            method="GET",
+            action="list Jira issue types",
+        )
+        raw_items: list[dict[str, Any]]
+        if isinstance(data, list):
+            raw_items = [item for item in data if isinstance(item, dict)]
+        else:
+            raw_items = []
+            for key in ("issueTypes", "values"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    raw_items = [item for item in value if isinstance(item, dict)]
+                    break
+
+        results = []
+        for item in raw_items:
+            results.append(
+                IssueTypeRecord(
+                    issue_type_id=str(item.get("id") or ""),
+                    name=str(item.get("name") or "Untitled issue type"),
+                    description=str(item.get("description") or ""),
+                    subtask=bool(item.get("subtask")),
+                    hierarchy_level=item.get("hierarchyLevel"),
+                )
+            )
+        return results
+
     def _request(
         self,
         path: str,
         *,
         method: str = "GET",
+        params: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
         action: str = "access Jira",
     ) -> dict[str, Any]:
@@ -77,6 +131,7 @@ class JiraClient:
             response = httpx.request(
                 method=method.upper(),
                 url=f"{self.site_url}{path}",
+                params=params,
                 json=payload,
                 auth=(self.config.confluence_email, self.config.confluence_api_token),
                 timeout=30.0,

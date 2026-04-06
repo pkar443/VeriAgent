@@ -46,6 +46,28 @@ class PageRecord(SourceRecord):
     content: str = ""
 
 
+class SpaceRecord(BaseModel):
+    space_id: str
+    key: str
+    name: str
+    type: str = ""
+
+
+class ProjectRecord(BaseModel):
+    project_id: str
+    key: str
+    name: str
+    project_type: str = ""
+
+
+class IssueTypeRecord(BaseModel):
+    issue_type_id: str
+    name: str
+    description: str = ""
+    subtask: bool = False
+    hierarchy_level: int | None = None
+
+
 class CreatePageRequest(BaseModel):
     title: str
     space: str

@@ -24,11 +24,14 @@ from backend.app.models.schemas import (
     DraftTransformRequest,
     DraftTransformResponse,
     HealthResponse,
+    IssueTypeRecord,
     MCPConfigRequest,
     MCPConfigResponse,
     OpenLocationRequest,
     PageRecord,
+    ProjectRecord,
     ServiceStatus,
+    SpaceRecord,
     SourceRecord,
     TestResult,
     UpdateConfigRequest,
@@ -73,6 +76,11 @@ def get_page(page_id: str, request: Request) -> PageRecord:
     return get_container(request).confluence().get_page(page_id)
 
 
+@router.get("/confluence/spaces", response_model=list[SpaceRecord])
+def list_spaces(request: Request, limit: int = 50) -> list[SpaceRecord]:
+    return get_container(request).confluence().list_spaces(limit=limit)
+
+
 @router.post("/confluence/pages", response_model=CreatePageResponse)
 def create_page(payload: CreatePageRequest, request: Request) -> CreatePageResponse:
     return get_container(request).confluence().create_page(
@@ -92,6 +100,16 @@ def create_jira_issue(payload: CreateJiraIssueRequest, request: Request) -> Crea
         issue_type=payload.issue_type,
         labels=payload.labels,
     )
+
+
+@router.get("/jira/projects", response_model=list[ProjectRecord])
+def list_jira_projects(request: Request, limit: int = 100) -> list[ProjectRecord]:
+    return get_container(request).jira().list_projects(limit=limit)
+
+
+@router.get("/jira/projects/{project_key}/issue-types", response_model=list[IssueTypeRecord])
+def list_jira_issue_types(project_key: str, request: Request) -> list[IssueTypeRecord]:
+    return get_container(request).jira().list_issue_types(project_key)
 
 
 @router.get("/studio/drafts", response_model=list[DraftRecord])
