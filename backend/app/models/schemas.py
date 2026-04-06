@@ -65,6 +65,104 @@ class CreatePageResponse(BaseModel):
     content_format: str = "markdown"
 
 
+StudioTarget = Literal["confluence_page", "jira_ticket", "prd"]
+
+
+class DraftRecord(BaseModel):
+    draft_id: str
+    title: str
+    target: StudioTarget
+    raw_input: str = ""
+    structured_markdown: str = ""
+    preview_html: str = ""
+    source: str = "dashboard"
+    status: Literal["draft", "published"] = "draft"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+    published_at: datetime | None = None
+
+
+class DraftSaveRequest(BaseModel):
+    draft_id: str | None = None
+    title: str = ""
+    target: StudioTarget = "confluence_page"
+    raw_input: str = ""
+    structured_markdown: str = ""
+    preview_html: str = ""
+    source: str = "dashboard"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DraftTransformRequest(BaseModel):
+    target: StudioTarget
+    raw_input: str
+    title: str = ""
+    existing_markdown: str = ""
+    context_notes: str = ""
+
+
+class DraftTransformResponse(BaseModel):
+    title: str
+    target: StudioTarget
+    structured_markdown: str
+    preview_html: str
+    assumptions: str = ""
+    suggested_publish_target: Literal["confluence", "jira"] = "confluence"
+
+
+class DraftPreviewRequest(BaseModel):
+    target: StudioTarget
+    title: str = ""
+    structured_markdown: str
+
+
+class DraftPreviewResponse(BaseModel):
+    target: StudioTarget
+    preview_html: str
+    title: str = ""
+    rendered_format: str = "storage_html"
+
+
+class CreateJiraIssueRequest(BaseModel):
+    summary: str
+    project_key: str
+    description_markdown: str
+    issue_type: str = "Task"
+    labels: list[str] = Field(default_factory=list)
+
+
+class CreateJiraIssueResponse(BaseModel):
+    summary: str
+    issue_key: str
+    url: str
+    project_key: str
+    issue_type: str
+    status: str = "created"
+
+
+class DraftPublishRequest(BaseModel):
+    draft_id: str | None = None
+    target: StudioTarget
+    title: str
+    structured_markdown: str
+    confluence_space: str = ""
+    parent_page_id: str | None = None
+    jira_project_key: str = ""
+    jira_issue_type: str = "Task"
+    jira_labels: list[str] = Field(default_factory=list)
+
+
+class DraftPublishResponse(BaseModel):
+    target: StudioTarget
+    platform: Literal["confluence", "jira"]
+    title: str
+    external_id: str
+    url: str
+    status: str = "published"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class RetrievedChunk(BaseModel):
     chunk_id: str
     title: str

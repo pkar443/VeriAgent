@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.app.core.exceptions import VeriAgentError
-from backend.app.models.schemas import AskResponse, ContextResponse, MCPConfigRequest
+from backend.app.models.schemas import AskResponse, ContextResponse, DraftSaveRequest, MCPConfigRequest
 from backend.app.services.hub import ServiceContainer
 from mcp.server.fastmcp import FastMCP
 
@@ -12,7 +12,8 @@ def build_mcp_server(container: ServiceContainer) -> FastMCP:
         instructions=(
             "Ground all answers in Confluence content and return URLs. Prefer retrieval-first tools so the calling "
             "agent can summarize from Confluence context directly. Use local Ollama generation only when explicitly requested. "
-            "When publishing content, use the dedicated Confluence page creation tool and return the created page URL."
+            "When publishing content, use the dedicated publishing tools and return the created URL. When a user wants to review "
+            "or edit content in the dashboard first, save it as a dashboard draft instead of publishing immediately."
         ),
     )
 
@@ -120,6 +121,68 @@ def build_mcp_server(container: ServiceContainer) -> FastMCP:
                 "page": created.model_dump(),
                 "message": f"Created Confluence page '{created.title}'.",
             }
+        except VeriAgentError as exc:
+            return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
+
+    @server.tool()
+    def create_jira_ticket(
+        summary: str,
+        project_key: str,
+        description_markdown: str,
+        issue_type: str = "Task",
+        labels: list[str] | None = None,
+    ) -> dict:
+        """Create a Jira issue from Markdown content and return the created issue URL."""
+        try:
+            created = container.jira().create_issue(
+                summary=summary,
+                project_key=project_key,
+                description_markdown=description_markdown,
+                issue_type=issue_type,
+                labels=labels or [],
+            )
+            return {
+                "ok": True,
+                "mode": "publish",
+                "issue": created.model_dump(),
+                "message": f"Created Jira issue '{created.issue_key}'.",
+            }
+        except VeriAgentError as exc:
+            return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
+
+    @server.tool()
+    def save_dashboard_draft(
+        title: str,
+        target: str,
+        raw_input: str = "",
+        structured_markdown: str = "",
+        source: str = "codex",
+    ) -> dict:
+        """Save a draft into the dashboard studio so a human can preview, edit, and publish it later."""
+        try:
+            saved = container.studio().save_draft(
+                DraftSaveRequest(
+                    title=title,
+                    target=target,
+                    raw_input=raw_input,
+                    structured_markdown=structured_markdown,
+                    source=source,
+                )
+            )
+            return {
+                "ok": True,
+                "draft": saved.model_dump(),
+                "message": f"Saved dashboard draft '{saved.title}'.",
+            }
+        except VeriAgentError as exc:
+            return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
+
+    @server.tool()
+    def list_dashboard_drafts(limit: int = 10) -> dict:
+        """List recent dashboard drafts so the agent can reference or update them."""
+        try:
+            drafts = container.studio().list_drafts(limit=limit)
+            return {"ok": True, "results": [draft.model_dump() for draft in drafts]}
         except VeriAgentError as exc:
             return {"ok": False, "error": {"code": exc.code, "message": exc.message}}
 

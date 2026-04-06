@@ -4,17 +4,21 @@ from backend.app.core.config import AppSettings
 from backend.app.models.schemas import ConfigResponse, RuntimeConfig, UpdateConfigRequest
 from backend.app.services.config_store import ConfigStore
 from backend.app.services.confluence import ConfluenceClient
+from backend.app.services.drafts import DraftStore
 from backend.app.services.integration import IntegrationService
+from backend.app.services.jira import JiraClient
 from backend.app.services.jobs import AskJobManager
 from backend.app.services.llm import OllamaProvider
 from backend.app.services.qa import QAService
 from backend.app.services.retrieval import RetrievalService
+from backend.app.services.studio import StudioService
 
 
 class ServiceContainer:
     def __init__(self, settings: AppSettings):
         self.settings = settings
         self.config_store = ConfigStore(settings.runtime_config_path)
+        self.draft_store = DraftStore(settings.runtime_config_path.parent / "drafts.json")
         self._ask_jobs = AskJobManager(self.qa)
 
     def runtime_config(self) -> RuntimeConfig:
@@ -44,6 +48,17 @@ class ServiceContainer:
 
     def qa(self) -> QAService:
         return QAService(self.retrieval(), self.ollama())
+
+    def jira(self) -> JiraClient:
+        return JiraClient(self.runtime_config(), self.settings)
+
+    def studio(self) -> StudioService:
+        return StudioService(
+            llm=self.ollama(),
+            drafts=self.draft_store,
+            confluence=self.confluence(),
+            jira=self.jira(),
+        )
 
     def ask_jobs(self) -> AskJobManager:
         return self._ask_jobs

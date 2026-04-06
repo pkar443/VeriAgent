@@ -13,6 +13,16 @@ from backend.app.models.schemas import (
     ContextResponse,
     CreatePageRequest,
     CreatePageResponse,
+    CreateJiraIssueRequest,
+    CreateJiraIssueResponse,
+    DraftPreviewRequest,
+    DraftPreviewResponse,
+    DraftPublishRequest,
+    DraftPublishResponse,
+    DraftRecord,
+    DraftSaveRequest,
+    DraftTransformRequest,
+    DraftTransformResponse,
     HealthResponse,
     MCPConfigRequest,
     MCPConfigResponse,
@@ -71,6 +81,51 @@ def create_page(payload: CreatePageRequest, request: Request) -> CreatePageRespo
         content_markdown=payload.content_markdown,
         parent_page_id=payload.parent_page_id,
     )
+
+
+@router.post("/jira/issues", response_model=CreateJiraIssueResponse)
+def create_jira_issue(payload: CreateJiraIssueRequest, request: Request) -> CreateJiraIssueResponse:
+    return get_container(request).jira().create_issue(
+        summary=payload.summary,
+        project_key=payload.project_key,
+        description_markdown=payload.description_markdown,
+        issue_type=payload.issue_type,
+        labels=payload.labels,
+    )
+
+
+@router.get("/studio/drafts", response_model=list[DraftRecord])
+def list_studio_drafts(request: Request, limit: int = 20) -> list[DraftRecord]:
+    return get_container(request).studio().list_drafts(limit=limit)
+
+
+@router.get("/studio/drafts/{draft_id}", response_model=DraftRecord)
+def get_studio_draft(draft_id: str, request: Request) -> DraftRecord:
+    return get_container(request).studio().get_draft(draft_id)
+
+
+@router.post("/studio/drafts", response_model=DraftRecord)
+def save_studio_draft(payload: DraftSaveRequest, request: Request) -> DraftRecord:
+    return get_container(request).studio().save_draft(payload)
+
+
+@router.post("/studio/transform", response_model=DraftTransformResponse)
+def transform_studio_draft(payload: DraftTransformRequest, request: Request) -> DraftTransformResponse:
+    return get_container(request).studio().transform(payload)
+
+
+@router.post("/studio/preview", response_model=DraftPreviewResponse)
+def preview_studio_draft(payload: DraftPreviewRequest, request: Request) -> DraftPreviewResponse:
+    return get_container(request).studio().render_preview(
+        target=payload.target,
+        title=payload.title,
+        structured_markdown=payload.structured_markdown,
+    )
+
+
+@router.post("/studio/publish", response_model=DraftPublishResponse)
+def publish_studio_draft(payload: DraftPublishRequest, request: Request) -> DraftPublishResponse:
+    return get_container(request).studio().publish(payload)
 
 
 @router.post("/qa/ask", response_model=AskResponse)
